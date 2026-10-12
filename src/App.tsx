@@ -10,6 +10,7 @@ import {
   type Transcript,
 } from './ui/state/transcript.ts'
 import { renderTree, type RenderContext } from './ui/tree/render.ts'
+import { captureInputFocus, restoreInputFocus } from './ui/tree/focus.ts'
 
 const DEFAULT_CORE_URL = import.meta.env.VITE_CORE_URL ?? 'ws://127.0.0.1:8787/ws'
 
@@ -78,23 +79,10 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
     const element = host.current
     if (!element) return
 
-    const active = document.activeElement as HTMLInputElement | null
-    const restore =
-      active && active.dataset.atom === 'input'
-        ? { caret: active.selectionStart ?? active.value.length }
-        : null
-
+    const focus = captureInputFocus(element)
     element.replaceChildren()
     element.appendChild(renderTree(scaffoldTree(transcript, { draft }), context))
-
-    if (restore) {
-      const next = element.querySelector<HTMLInputElement>('input[data-atom="input"]')
-      if (next) {
-        next.focus()
-        const position = Math.min(restore.caret, next.value.length)
-        next.setSelectionRange(position, position)
-      }
-    }
+    restoreInputFocus(element, focus)
   })
 
   return <div data-sbh-root ref={host} />
