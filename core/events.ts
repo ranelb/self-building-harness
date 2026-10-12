@@ -37,6 +37,14 @@ export function normalizeUpdate(update: unknown): UiEvent[] {
       return text === null ? [] : [{ type: 'thought', text }]
     }
 
+    case 'usage_update': {
+      // The context meter's whole data source. ACP carries it; dropping it here is
+      // what made a context indicator look impossible to build.
+      if (typeof update.used !== 'number' || typeof update.size !== 'number') return []
+      const event: UiEvent = { type: 'usage', used: update.used, size: update.size }
+      return update.cost === undefined ? [event] : [{ ...event, cost: update.cost }]
+    }
+
     case 'tool_call': {
       if (typeof update.toolCallId !== 'string') return []
       const title =

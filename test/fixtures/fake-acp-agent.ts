@@ -16,6 +16,7 @@ export const SCENARIOS = [
   'happy',
   'permission',
   'unknown-update',
+  'usage',
   'crash-mid-turn',
   'split-multibyte',
 ] as const
@@ -79,6 +80,12 @@ async function runScenario(
       chunk(allowed ? 'after' : 'denied')
       return
     }
+
+    case 'usage':
+      // The context meter's data source, so it is testable without a model.
+      notify({ sessionUpdate: 'usage_update', used: 12_345, size: 100_000, cost: { amount: 0.02, currency: 'USD' } })
+      chunk('counted')
+      return
 
     case 'unknown-update':
       notify({ sessionUpdate: 'invented_future_kind', payload: 1 })

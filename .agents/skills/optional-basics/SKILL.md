@@ -48,18 +48,23 @@ on the next run, and not covered by `Revert last change`. A shared, persisted,
 agent-visible settings store is not built yet — say so if someone asks for one rather
 than faking it with one component's private state.
 
-## 2. Context meter — **blocked**
+## 2. Context meter — buildable
 
 **Why:** a user wants to see how full the model's context is before it compacts.
 
-**Build:** a component showing used/total tokens, fed from `ctx.host`.
+**Build:** a component reading `ctx.host.data.usage`, which is
+`{ used, size, cost? }` — tokens currently in context, the window size, and the
+cumulative session cost when the agent reports one. Render a bar, a percentage, or
+both.
 
-**Needs:** context or token usage reaching the UI. **It does not.** `HostState` has
-`messages`, `status`, `error`, `draft`, `pendingPermission`, `notices` — no usage.
-The core's `UiEvent` has no usage event either, so the number never leaves the agent.
+**Needs:** nothing new. The agent reports it as an ACP `usage_update`; the core
+normalises it into a `usage` event and the app folds it into `data.usage`.
 
-**To unblock:** map the agent's usage into a new `UiEvent`, carry it into `HostState`,
-then build the component. Until then, report this as a gap.
+**Acceptance:** it shows a dash before the first turn and a real percentage after
+one, and it updates as the conversation grows.
+
+**Note:** the number arrives with the turn, so it is not live between turns. That is
+the agent's reporting cadence, not a limitation of the component.
 
 ## 3. Light/dark toggle — buildable, not persisted
 
@@ -78,6 +83,29 @@ background**, and clicking again swaps back.
 **Known limit:** the choice does not survive a reload and does not touch
 `theme.json`, because no component may currently write the theme. Combine with recipe
 1's limit if a persisted toggle is wanted.
+
+## Anything else about this machine
+
+The same channel carries it. Components run in the webview and can reach nothing,
+but **the core is an ordinary process running as you**, so it can read anything you
+can. The pattern is always: core samples → a `state` message → the app folds it into
+`ctx.host.data[key]` → your component renders it.
+
+`ctx.host.data.system` already carries a machine sample, refreshed every couple of
+seconds:
+
+```
+{ cpu: { usage: 0..1, cores }, memory: { usedBytes, totalBytes, usage: 0..1 }, load: [1m, 5m, 15m] }
+```
+
+So a CPU widget, a memory bar or a load average is a component reading one field —
+as is a disk, GPU, battery, network or MPRIS widget, once the core samples that too.
+Adding a source is core work, not component work.
+
+**One limit worth stating:** SBH is a window. It cannot put anything in your desktop's
+bar — that is a shell plugin in a different toolkit, not a webview. It can *display*
+anything the core can read, and the core could equally publish a file a bar consumes.
+Say that plainly rather than implying the widget will appear in the bar.
 
 ## 4. Sessions sidebar — **blocked**
 

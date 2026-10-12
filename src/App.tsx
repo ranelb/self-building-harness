@@ -27,6 +27,7 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
   const [components, setComponents] = useState<LoadReport | null>(null)
   const [tokens, setTokens] = useState<Record<string, string>>({})
   const [layout, setLayout] = useState<UiNode>(DEFAULT_LAYOUT)
+  const [data, setData] = useState<Record<string, unknown>>({})
   const host = useRef<HTMLDivElement>(null)
   const stream = useRef<Stream | null>(null)
 
@@ -61,7 +62,22 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
       })
     }
 
-    connection.onEvent((event) => setTranscript((previous) => applyEvent(previous, event)))
+    connection.onEvent((event) => {
+      if (event.type === 'usage') {
+        // Context usage is state, not transcript.
+        setData((previous) => ({
+          ...previous,
+          usage: {
+            used: event.used,
+            size: event.size,
+            ...(event.cost === undefined ? {} : { cost: event.cost }),
+          },
+        }))
+        return
+      }
+      setTranscript((previous) => applyEvent(previous, event))
+    })
+    connection.onState((key, value) => setData((previous) => ({ ...previous, [key]: value })))
     connection.onInvalidate((what) => {
       if (what === 'components') refreshComponents()
       else if (what === 'theme') refreshTheme()
@@ -87,6 +103,7 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
     notices: components?.failed.map((failure) => `${failure.name} (${failure.error})`) ?? [],
     harness: { value: 'pi', options: [{ value: 'pi', label: 'Pi' }] },
     model: { value: 'default', options: [{ value: 'default', label: 'Default' }] },
+    data,
   }
 
   const context: RenderContext = {

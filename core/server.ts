@@ -12,6 +12,7 @@ import { resolveBackend } from './backends/registry.ts'
 import { ensureComponentsDir, listComponents, readComponent } from './components.ts'
 import { ensureLayoutFile, readLayout } from './layout.ts'
 import { ensureThemeFile, readTheme } from './theme.ts'
+import { sampleSystem } from './system.ts'
 import { ensureRepo, history, revertLast, snapshot } from './versioning.ts'
 import { watchPaths } from './watch.ts'
 import { DENY_BY_DEFAULT, respondToPermission, type PermissionPolicy } from './acp/permissions.ts'
@@ -42,6 +43,8 @@ export interface CoreOptions {
   componentsDir?: string
   /** Config root; theme.json and components/ live under it. */
   configDir?: string
+  /** How often to publish a machine sample. 0 disables it. */
+  sampleIntervalMs?: number
 }
 
 export interface Core {
@@ -235,12 +238,26 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     }
   })
 
+  // Machine samples ride the same state channel as everything else, so a component
+  // can render the CPU without any protocol or core change per widget. Skipped when
+  // nobody is connected, and unref'd so it never holds a test process open.
+  const sampleIntervalMs = options.sampleIntervalMs ?? 2000
+  const sampleTimer =
+    sampleIntervalMs > 0
+      ? setInterval(() => {
+          if (clients.size === 0) return
+          sendToAll({ type: 'state', key: 'system', value: sampleSystem() })
+        }, sampleIntervalMs)
+      : null
+  sampleTimer?.unref?.()
+
   const address = http.address()
   const port = typeof address === 'object' && address !== null ? address.port : 0
 
   return {
     port,
     async close() {
+      if (sampleTimer) clearInterval(sampleTimer)
       componentWatcher.close()
       configWatcher.close()
       conn?.close()

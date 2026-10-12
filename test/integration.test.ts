@@ -46,6 +46,38 @@ describe('core -> ws -> transcript', () => {
     stream.close()
   })
 
+  it('carries usage through to the client, for a context meter', async () => {
+    core = await startCore({ port: 0, backend: 'fake:usage', sampleIntervalMs: 0 })
+    const stream = connectStream(`ws://127.0.0.1:${core.port}/ws`)
+    const events: unknown[] = []
+    stream.onEvent((event) => events.push(event))
+
+    stream.send({ type: 'prompt', text: 'hello' })
+    await waitFor(() => events.some((event) => (event as { type: string }).type === 'usage'))
+
+    expect(events).toContainEqual({
+      type: 'usage',
+      used: 12_345,
+      size: 100_000,
+      cost: { amount: 0.02, currency: 'USD' },
+    })
+    stream.close()
+  })
+
+  it('publishes machine samples on the state channel', async () => {
+    core = await startCore({ port: 0, backend: 'fake:happy', sampleIntervalMs: 40 })
+    const stream = connectStream(`ws://127.0.0.1:${core.port}/ws`)
+    const states: Record<string, unknown> = {}
+    stream.onState((key, value) => {
+      states[key] = value
+    })
+
+    await waitFor(() => 'system' in states)
+    const sample = states.system as { cpu?: { cores?: number } }
+    expect(sample.cpu?.cores).toBeGreaterThan(0)
+    stream.close()
+  })
+
   it('surfaces an agent crash as an error event, not a hang', async () => {
     core = await startCore({ port: 0, backend: 'fake:crash-mid-turn' })
     const stream = connectStream(`ws://127.0.0.1:${core.port}/ws`)

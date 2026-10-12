@@ -192,9 +192,11 @@ against a detached node forever.
 
 `.agents/skills/optional-basics/SKILL.md` — recipes for a settings panel, a context
 meter, light/dark mode and a sessions sidebar, each with an acceptance criterion and
-the host capability it needs. **Two of the four are blocked**: the context meter has
-no usage data reaching the UI, and the sessions sidebar has no session API in the
-core. Read it before building any of those, and before claiming SBH can.
+the host capability it needs. **One of the four is blocked**: the sessions sidebar
+has no session list/resume in the core. The context meter is buildable — ACP carries
+`usage_update` and the core forwards it as `ctx.host.data.usage`. It also documents
+the machine-data channel (`ctx.host.data.system`), which is how any system widget is
+built. Read it before building any of those, and before claiming SBH can.
 
 Read it the same way for anything of the form "add a panel that shows X or lets the
 user Y" — the four recipes are the worked examples, and the skill doubles as the

@@ -14,6 +14,7 @@ const ctx: RenderContext = {
     notices: [],
     harness: { value: 'pi', options: [] },
     model: { value: 'default', options: [] },
+    data: {},
   },
   bind: () => {},
   latest: () => undefined,

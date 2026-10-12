@@ -10,6 +10,7 @@ export type UiEvent =
   | { type: 'thought'; text: string }
   | { type: 'tool'; toolCallId: string; title: string; status?: string }
   | { type: 'permission.requested'; requestId: string; title: string }
+  | { type: 'usage'; used: number; size: number; cost?: unknown }
   | { type: 'turn.started' }
   | { type: 'turn.finished'; stopReason: string }
   | { type: 'error'; message: string }
@@ -22,5 +23,10 @@ export type ClientToCore =
 /** Core -> client. */
 export type CoreToClient =
   | { type: 'event'; event: UiEvent }
+  /**
+   * A keyed value the host is publishing — usage, machine samples, anything the
+   * core can reach. One channel, so a new widget needs no protocol change.
+   */
+  | { type: 'state'; key: string; value: unknown }
   /** A watched file changed; the client should re-fetch. Hot reload. */
   | { type: 'invalidate'; what: 'components' | 'theme' | 'layout' }

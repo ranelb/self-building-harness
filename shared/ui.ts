@@ -63,4 +63,9 @@ export interface HostState {
   notices: string[]
   harness: { value: string; options: PickOption[] }
   model: { value: string; options: PickOption[] }
+  /**
+   * Keyed values published by the core — `usage` from the agent, `system` from the
+   * machine. Components read this; new keys need no protocol change.
+   */
+  data: Record<string, unknown>
 }

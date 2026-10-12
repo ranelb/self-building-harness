@@ -22,6 +22,19 @@ describe('normalizeUpdate', () => {
     ])
   })
 
+  it('maps a usage update to a usage event', () => {
+    // Without this the context meter looks impossible to build: ACP carries the
+    // data, and the normalizer was dropping it on the floor.
+    expect(normalizeUpdate({ sessionUpdate: 'usage_update', used: 12_345, size: 100_000 })).toEqual([
+      { type: 'usage', used: 12_345, size: 100_000 },
+    ])
+  })
+
+  it('drops a usage update with no numbers rather than emitting NaN', () => {
+    expect(normalizeUpdate({ sessionUpdate: 'usage_update' })).toEqual([])
+    expect(normalizeUpdate({ sessionUpdate: 'usage_update', used: 'many', size: 100 })).toEqual([])
+  })
+
   it('ignores an unknown update kind instead of throwing', () => {
     expect(normalizeUpdate({ sessionUpdate: 'invented_future_kind', payload: 1 })).toEqual([])
   })
