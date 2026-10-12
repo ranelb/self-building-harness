@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest'
 import { render } from 'preact'
 import { App } from './App'
