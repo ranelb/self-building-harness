@@ -748,3 +748,19 @@ Bugs found by doing it for real, not by the suite:
 - a loaded module had no way to install a listener reading the current node, since
   it cannot import registry internals. Added `ctx.bind` / `ctx.latest`.
 - the server test's 3s wait was flaky under parallel load.
+
+## Authoring loop complete (2026-10-12)
+
+Steps 1–3 done, all verified in Chromium with real files on disk and no page reloads:
+
+1. **Theme tokens** — `shared/theme.ts` → `--sbh-*` custom properties on the document
+   root; a partial `~/.config/sbh/theme.json` restyles the whole app. The built-in
+   controls style themselves only from tokens.
+2. **Hot reload** — the core debounces `fs.watch` and pushes `invalidate`; the client
+   re-fetches. Deleted components unregister.
+3. **Versioning + undo** — the config dir is a git repo; every settled change is
+   committed; a failed load offers "Revert last change".
+
+Remaining: Tauri spawning the core (needs a real window), session list/resume, real
+backend switching, published docs, and the deferred items (virtualization, mobile,
+MCP Apps).
