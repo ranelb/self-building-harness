@@ -717,3 +717,34 @@ spec's v0 set and the composer needed it).
 The lesson, again: a DOM assertion checks that an element exists, not that the
 thing looks right. Four of the seven bugs found in this build were only visible by
 rendering it.
+
+## Pivot: trusted agent-authored components (2026-10-12)
+
+ran approved code execution for UI, on the reasoning that anyone running their own
+harness is already on YOLO. Accepted, with one thing kept native: **the permission
+gate**, because a trusted component could otherwise draw its own approval prompt —
+defeating the "control sits outside the model" rule.
+
+What this changed:
+
+- **Renderer reconciliation** (was the prerequisite, now done): mount once, patch in
+  place. A component is `{create, update?, container?}`. This deleted the hand-rolled
+  `focus.ts` hack — focus, caret and scroll now survive because the element does.
+- **Component loading**: the core serves `~/.config/sbh/components/*.js` over
+  loopback (a webview cannot `import()` from disk); the UI registers them through
+  the same registry as the built-ins, so a loaded component **overrides** a built-in.
+- **Safe mode**: a module that fails to fetch, import or match the contract is named
+  on screen and skipped; the built-ins always keep working.
+
+What this cancelled: the M4 atom-library plan and the "dumb templates +
+if/foreach/slot" control-flow atoms. Code provides composition and control flow, so
+~1× M1 of anticipated work evaporates.
+
+Bugs found by doing it for real, not by the suite:
+- reconciliation keyed on `node.type` alone, so overriding a component under the
+  same name called the *new* implementation's `update` on an element the *old* one
+  created — a hybrid element (new label, old styling). Elements are now tagged with
+  the component identity.
+- a loaded module had no way to install a listener reading the current node, since
+  it cannot import registry internals. Added `ctx.bind` / `ctx.latest`.
+- the server test's 3s wait was flaky under parallel load.
