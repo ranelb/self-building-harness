@@ -862,3 +862,49 @@ below the composer; both landed on the live page with no reload.
 **#3 (state store) is still open and now less pressing** — `localStorage` covers the
 simple case; the store is for sharing state between components and making it
 agent-visible and revertable.
+
+## Roadmap evaluation (2026-10-12)
+
+Everything below the line is verified in Chromium against a live core; **nothing has
+ever run inside Tauri**. `cargo check` passes, the window has never opened.
+
+**Tier 1 — it is not an app yet.**
+- **Tauri must spawn the core.** Today you run `npm run core` in a terminal first.
+  The core is a sidecar: bundling, a port handshake, lifecycle, and killing it on
+  exit. This is the one thing between "project" and "program".
+- **Open the window.** WebKitGTK is not Chromium. Every verification so far used the
+  wrong engine, and that is exactly where a surprise lives.
+
+**Tier 2 — the thesis is unproven.**
+- **A second backend.** The registry has only `pi`. "Compatible with most harnesses"
+  is a claim with n=1. `goose` is installed, speaks ACP natively, and the fake-agent
+  pattern already exists — this is the cheapest way to test the whole premise.
+- **Resume a session.** Viewing works; `session/load` (or the harness's resume flag)
+  does not exist, so a past chat cannot be continued.
+
+**Tier 3 — daily-driver quality.**
+- **Harness/model pickers are decorative.** They dispatch into the void and the
+  options are single-entry hardcoded lists. Real switching means reconnecting the
+  ACP session with a different backend and model.
+- **Transcript virtualization** — flagged in the original review, still untested. 260
+  bubbles render; 10,000 is unknown.
+- **Settings store** (the demoted #3): `localStorage` works, but it is not shared
+  between components, not agent-visible, and not covered by revert.
+
+**Tier 4 — the interesting extensions.**
+- **Capability manifest** — the honest form of the "full system integration" question:
+  named capabilities, default-deny, policy in a root-owned file, approved through the
+  same UI as tool calls.
+- **MCP Apps host** — ratified standard, the sandbox host is ~80% built.
+- **Published docs** so a harness can `web_fetch` them, per the design.
+
+**Tier 5 — deliberate or deferred.**
+- Mobile/PWA client; packaging (deb/AppImage) and an install story; the repo split
+  (evaluated: don't, until a second client exists).
+
+**Small risks worth naming.**
+- **No origin check on the WebSocket.** Any web page can connect to the loopback port
+  and drive the agent. Small, real, and cheap to close — do it with the Tauri work,
+  since packaging changes the origin story anyway.
+- **The transcript renders injected skill bodies** as the first message of a session.
+  Faithful to the file, ugly to read. Presentation decision, not a bug.
