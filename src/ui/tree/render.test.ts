@@ -9,6 +9,8 @@ const BUILT_INS = registeredComponents()
 const calls: unknown[] = []
 const ctx: RenderContext = {
   tokens: {},
+  bind: () => {},
+  latest: () => undefined,
   dispatch: (action, payload) => calls.push(payload === undefined ? action : { action, payload }),
 }
 

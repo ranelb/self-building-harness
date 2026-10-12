@@ -18,12 +18,22 @@ export interface UiNode {
   props?: Record<string, unknown>
   children?: UiNode[]
 }
-
 export interface RenderContext {
   /** Emit a named action for the host to handle. */
   dispatch(action: string, payload?: unknown): void
   /** Theme tokens available to components. */
   tokens: Record<string, string>
+  /**
+   * Record the node this element currently represents.
+   *
+   * An event listener is installed once, at `create` time, so it must read the
+   * *latest* node rather than closing over the one from mount. This is the
+   * documented way an agent-authored component does that, since a loaded module
+   * cannot import the registry's internals.
+   */
+  bind(el: Node, node: UiNode): void
+  /** Recall what `bind` recorded — how a listener reads the current node. */
+  latest(el: Node): LiveNode | undefined
 }
 
 export interface Component {
@@ -45,7 +55,17 @@ const components = new Map<string, Component>()
 /** Marks the node type an element was built for, so patching can detect a swap. */
 const TYPE = Symbol.for('sbh.nodeType')
 
-type Tagged = Node & { [TYPE]?: string }
+/**
+ * Marks the component *implementation* that built an element.
+ *
+ * Type alone is not enough: a loaded component can override a built-in of the
+ * same name (that is the point), and patching the old element with the new
+ * implementation's `update` produced a hybrid — the new label on an element the
+ * built-in had created. Comparing implementation identity forces a clean remount.
+ */
+const COMPONENT = Symbol.for('sbh.component')
+
+type Tagged = Node & { [TYPE]?: string; [COMPONENT]?: Component }
 
 export function registerComponent(component: Component): void {
   components.set(component.name, component)
@@ -84,6 +104,7 @@ function mount(node: UiNode, ctx: RenderContext): Node {
   }
 
   ;(el as Tagged)[TYPE] = node.type
+  ;(el as Tagged)[COMPONENT] = component
   if (component.container) reconcileChildren(el, node, ctx)
   return el
 }
@@ -102,7 +123,7 @@ export function patchTree(el: Node, node: UiNode, ctx: RenderContext): Node {
   }
 
   const component = components.get(node.type)
-  if (!component || tagged[TYPE] !== node.type) {
+  if (!component || tagged[TYPE] !== node.type || tagged[COMPONENT] !== component) {
     return mount(node, ctx)
   }
 
@@ -200,3 +221,6 @@ export function setLive(el: Node, node: UiNode, ctx: RenderContext): void {
 export function getLive(el: Node): LiveNode | undefined {
   return (el as Tagged & { [LIVE]?: LiveNode })[LIVE]
 }
+
+/** The `bind` helper handed to every component, including loaded ones. */
+export const bindTo = (ctx: RenderContext) => (el: Node, node: UiNode) => setLive(el, node, ctx)

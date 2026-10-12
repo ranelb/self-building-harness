@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import './ui/atoms/index.ts'
+import { httpBaseFromWsUrl, loadComponents, type LoadReport } from './ui/components/load.ts'
 import { scaffoldTree } from './ui/scaffold.ts'
 import { connectStream, type Stream } from './ui/state/stream.ts'
 import {
@@ -9,7 +10,7 @@ import {
   withUserMessage,
   type Transcript,
 } from './ui/state/transcript.ts'
-import { renderInto, type RenderContext } from './ui/tree/render.ts'
+import { getLive, renderInto, setLive, type RenderContext, type UiNode } from './ui/tree/render.ts'
 
 const DEFAULT_CORE_URL = import.meta.env.VITE_CORE_URL ?? 'ws://127.0.0.1:8787/ws'
 
@@ -20,6 +21,7 @@ export interface AppProps {
 export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
   const [transcript, setTranscript] = useState<Transcript>(empty)
   const [draft, setDraft] = useState('')
+  const [components, setComponents] = useState<LoadReport | null>(null)
   const host = useRef<HTMLDivElement>(null)
   const stream = useRef<Stream | null>(null)
 
@@ -30,8 +32,25 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
     return () => connection.close()
   }, [coreUrl])
 
+  // Agent-authored components load once, then the state change re-renders so any
+  // that published a component are usable. Failures are surfaced, not swallowed:
+  // the built-ins keep working and the broken ones are named on screen.
+  useEffect(() => {
+    const baseUrl = httpBaseFromWsUrl(coreUrl)
+    if (!baseUrl) return
+    let cancelled = false
+    void loadComponents({ baseUrl }).then((report) => {
+      if (!cancelled) setComponents(report)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [coreUrl])
+
   const context: RenderContext = {
     tokens: {},
+    bind: (el: Node, node: UiNode) => setLive(el, node, context),
+    latest: (el: Node) => getLive(el),
     dispatch(action, payload) {
       const props = payload as { value?: unknown; requestId?: unknown } | undefined
 
@@ -78,7 +97,8 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
   useEffect(() => {
     const element = host.current
     if (!element) return
-    renderInto(element, scaffoldTree(transcript, { draft }), context)
+    const notices = components?.failed.map((failure) => `${failure.name} (${failure.error})`) ?? []
+    renderInto(element, scaffoldTree(transcript, { draft, notices }), context)
   })
 
   return <div data-sbh-root ref={host} />

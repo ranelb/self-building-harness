@@ -1,11 +1,13 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, afterEach } from 'vitest'
 import '../atoms/index.ts'
-import { renderInto, type RenderContext, type UiNode } from './render.ts'
+import { renderInto, registerComponent, type RenderContext, type UiNode } from './render.ts'
 
 const calls: unknown[] = []
 const ctx: RenderContext = {
   tokens: {},
+  bind: () => {},
+  latest: () => undefined,
   dispatch: (action, payload) => calls.push(payload === undefined ? action : { action, payload }),
 }
 
@@ -106,5 +108,35 @@ describe('reconciliation', () => {
     renderInto(el, { type: 'text', props: { value: 'a' } }, ctx)
     renderInto(el, { type: 'not-registered' }, ctx)
     expect(el.querySelector('[data-unknown="not-registered"]')).not.toBeNull()
+  })
+
+  it('remounts when a component is redefined under the same name', () => {
+    // Hot reload / an agent overriding a built-in: the old element was built by a
+    // different implementation, so patching it in place would leave a hybrid.
+    const el = newHost()
+    registerComponent({
+      name: 'redefinable',
+      create: () => {
+        const node = document.createElement('div')
+        node.dataset.version = 'v1'
+        return node
+      },
+    })
+    renderInto(el, { type: 'redefinable' }, ctx)
+    const first = el.firstElementChild
+
+    registerComponent({
+      name: 'redefinable',
+      create: () => {
+        const node = document.createElement('div')
+        node.dataset.version = 'v2'
+        return node
+      },
+    })
+    renderInto(el, { type: 'redefinable' }, ctx)
+
+    expect(el.firstElementChild).not.toBe(first)
+    expect((el.firstElementChild as HTMLElement).dataset.version).toBe('v2')
+    expect(el.querySelector('[data-version="v1"]')).toBeNull()
   })
 })

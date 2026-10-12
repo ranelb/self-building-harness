@@ -4,10 +4,12 @@
  * later phone/PWA client is just another client rather than a second backend.
  */
 import { createServer } from 'node:http'
-import { resolve } from 'node:path'
+import { homedir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { WebSocketServer, WebSocket } from 'ws'
 import { connectAcp, type AcpConnection } from './acp/client.ts'
 import { resolveBackend } from './backends/registry.ts'
+import { ensureComponentsDir, listComponents, readComponent } from './components.ts'
 import { DENY_BY_DEFAULT, respondToPermission, type PermissionPolicy } from './acp/permissions.ts'
 import type { UiEvent } from './events.ts'
 
@@ -32,6 +34,8 @@ export interface CoreOptions {
   backend?: string
   cwd?: string
   policy?: PermissionPolicy
+  /** Where agent-authored component modules live. */
+  componentsDir?: string
 }
 
 export interface Core {
@@ -48,6 +52,9 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
   const backend = options.backend ?? 'pi'
   const cwd = options.cwd ?? process.cwd()
   const policy = options.policy ?? DENY_BY_DEFAULT
+  const componentsDir =
+    options.componentsDir ?? process.env.SBH_COMPONENTS_DIR ?? join(homedir(), '.config', 'sbh', 'components')
+  await ensureComponentsDir(componentsDir)
 
   const clients = new Set<WebSocket>()
   let conn: AcpConnection | null = null
@@ -82,11 +89,43 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
   }
 
   const http = createServer((req, res) => {
-    if (req.method === 'GET' && req.url === '/health') {
+    const url = req.url ?? ''
+
+    if (req.method === 'GET' && url === '/health') {
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify({ ok: true }))
       return
     }
+
+    // Agent-authored components. CORS is open because the webview may be served
+    // from a different origin (Vite in dev, tauri:// in the app); the listener is
+    // loopback-only.
+    if (req.method === 'GET' && url === '/components') {
+      void listComponents(componentsDir).then((components) => {
+        res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
+        res.end(JSON.stringify({ components }))
+      })
+      return
+    }
+
+    const match = /^\/components\/([A-Za-z0-9_-]+)\.js$/.exec(url)
+    if (req.method === 'GET' && match) {
+      void readComponent(componentsDir, match[1] as string).then((source) => {
+        if (source === null) {
+          res.writeHead(404, { 'access-control-allow-origin': '*' })
+          res.end()
+          return
+        }
+        res.writeHead(200, {
+          'content-type': 'text/javascript',
+          'access-control-allow-origin': '*',
+          'cache-control': 'no-store',
+        })
+        res.end(source)
+      })
+      return
+    }
+
     res.writeHead(404)
     res.end()
   })

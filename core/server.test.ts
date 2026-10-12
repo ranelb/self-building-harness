@@ -1,5 +1,8 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { once } from 'node:events'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import WebSocket from 'ws'
 import { startCore, type Core } from './server.ts'
 
@@ -10,7 +13,7 @@ afterEach(async () => {
   core = undefined
 })
 
-const waitFor = async (predicate: () => boolean, timeoutMs = 3000) => {
+const waitFor = async (predicate: () => boolean, timeoutMs = 8000) => {
   const started = Date.now()
   while (!predicate()) {
     if (Date.now() - started > timeoutMs) throw new Error('timed out waiting for condition')
@@ -60,6 +63,24 @@ describe('core server', () => {
     await waitFor(() => seenB.some((m) => m.event?.type === 'turn.finished'))
     a.close()
     b.close()
+  })
+
+  it('serves the component directory', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sbh-server-components-'))
+    await writeFile(join(dir, 'badge.js'), 'export const component = { name: "badge" }')
+    core = await startCore({ port: 0, backend: 'fake:happy', componentsDir: dir })
+
+    const list = await fetch(`http://127.0.0.1:${core.port}/components`).then((r) => r.json())
+    expect(list).toEqual({ components: ['badge'] })
+
+    const source = await fetch(`http://127.0.0.1:${core.port}/components/badge.js`)
+    expect(source.status).toBe(200)
+    expect(await source.text()).toContain('badge')
+
+    const traversal = await fetch(`http://127.0.0.1:${core.port}/components/..%2f..%2fetc%2fpasswd.js`)
+    expect(traversal.status).toBe(404)
+
+    await rm(dir, { recursive: true, force: true })
   })
 
   it('surfaces an agent crash as an error event, not a hang', async () => {

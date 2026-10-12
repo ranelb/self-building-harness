@@ -13,10 +13,12 @@ export interface ScaffoldOptions {
   draft?: string
   harness?: string
   model?: string
+  /** Safe-mode surface: components that failed to load are named on screen. */
+  notices?: string[]
 }
 
 export function scaffoldTree(transcript: Transcript, options: ScaffoldOptions = {}): UiNode {
-  const { draft = '', harness = 'pi', model = 'default' } = options
+  const { draft = '', harness = 'pi', model = 'default', notices = [] } = options
 
   const messages: UiNode[] = transcript.messages.map((message) => ({
     type: 'markdown',
@@ -46,6 +48,11 @@ export function scaffoldTree(transcript: Transcript, options: ScaffoldOptions = 
     type: 'column',
     props: { grow: true },
     children: [
+      {
+        type: 'column',
+        props: { gap: '0.25rem' },
+        children: notices.map((notice) => ({ type: 'text', props: { value: `component unavailable — ${notice}` } })),
+      },
       {
         type: 'row',
         children: [
