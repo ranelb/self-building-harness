@@ -145,3 +145,13 @@ Reference tokens as `var(--sbh-color-accent)`, `var(--sbh-space-md)`,
 That is what keeps independently-authored components looking like one app, and it is
 why a theme change needs no code change anywhere. The built-in controls in
 `src/ui/atoms/style.ts` are the worked example.
+
+## Undo
+
+`~/.config/sbh` is a git repo with its own local identity (never your global
+config). Every settled change — a component written, a theme edited — is committed
+as `sbh: …`. When something fails to load, the app offers **Revert last change**,
+which runs `git revert` so the undo is itself a commit and can be undone in turn.
+
+`GET /history` lists commits; `POST /revert` undoes the last one. Inspect it by hand
+with `git -C ~/.config/sbh log --oneline`.

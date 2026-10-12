@@ -11,6 +11,7 @@ import { connectAcp, type AcpConnection } from './acp/client.ts'
 import { resolveBackend } from './backends/registry.ts'
 import { ensureComponentsDir, listComponents, readComponent } from './components.ts'
 import { ensureThemeFile, readTheme } from './theme.ts'
+import { ensureRepo, history, revertLast, snapshot } from './versioning.ts'
 import { watchPaths } from './watch.ts'
 import { DENY_BY_DEFAULT, respondToPermission, type PermissionPolicy } from './acp/permissions.ts'
 import type { UiEvent } from './events.ts'
@@ -60,6 +61,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
   const componentsDir = options.componentsDir ?? join(configDir, 'components')
   await ensureComponentsDir(componentsDir)
   await ensureThemeFile(configDir)
+  await ensureRepo(configDir)
 
   const clients = new Set<WebSocket>()
   let conn: AcpConnection | null = null
@@ -141,6 +143,26 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
       return
     }
 
+    if (req.method === 'GET' && url === '/history') {
+      void history(configDir).then((commits) => {
+        res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
+        res.end(JSON.stringify({ commits }))
+      })
+      return
+    }
+
+    if (req.method === 'POST' && url === '/revert') {
+      void revertLast(configDir).then((reverted) => {
+        if (reverted) {
+          sendToAll({ type: 'invalidate', what: 'components' })
+          sendToAll({ type: 'invalidate', what: 'theme' })
+        }
+        res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
+        res.end(JSON.stringify({ reverted }))
+      })
+      return
+    }
+
     res.writeHead(404)
     res.end()
   })
@@ -179,13 +201,21 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
   })
 
   // Hot reload: tell clients to re-fetch rather than pushing the content, so the
-  // client keeps ownership of import/validation/registration.
-  const componentWatcher = watchPaths([componentsDir], () =>
-    sendToAll({ type: 'invalidate', what: 'components' })
-  )
+  // client keeps ownership of import/validation/registration. Each settled change
+  // is committed first, so "revert what the agent just did" has a target.
+  const componentWatcher = watchPaths([componentsDir], (changed) => {
+    void snapshot(configDir, `sbh: component ${changed}`).then(() =>
+      sendToAll({ type: 'invalidate', what: 'components' })
+    )
+  })
   const configWatcher = watchPaths([configDir], (changed) => {
+    // `.git` lives inside the watched directory, and committing writes there:
+    // without this filter the watcher retriggers on its own snapshots.
+    if (changed.startsWith('.git')) return
     if (changed === 'theme.json' || changed === configDir) {
-      sendToAll({ type: 'invalidate', what: 'theme' })
+      void snapshot(configDir, 'sbh: theme changed').then(() =>
+        sendToAll({ type: 'invalidate', what: 'theme' })
+      )
     }
   })
 

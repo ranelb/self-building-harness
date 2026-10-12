@@ -101,6 +101,15 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
           return
         }
 
+        case 'ui.revert': {
+          const base = httpBaseFromWsUrl(coreUrl)
+          if (!base) return
+          // The core reverts and then broadcasts an invalidate, so the refresh
+          // path is the same one hot reload already uses.
+          void fetch(`${base}/revert`, { method: 'POST' })
+          return
+        }
+
         default:
           return
       }

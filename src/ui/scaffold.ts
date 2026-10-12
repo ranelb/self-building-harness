@@ -50,8 +50,18 @@ export function scaffoldTree(transcript: Transcript, options: ScaffoldOptions = 
     children: [
       {
         type: 'column',
-        props: { gap: '0.25rem' },
-        children: notices.map((notice) => ({ type: 'text', props: { value: `component unavailable — ${notice}` } })),
+        props: { gap: 'var(--sbh-space-xs)' },
+        children: [
+          ...notices.map((notice) => ({
+            type: 'text',
+            props: { value: `component unavailable — ${notice}` },
+          })),
+          // Only offered when something is actually broken: an undo for whatever
+          // the agent changed last.
+          ...(notices.length > 0
+            ? [{ type: 'button', props: { label: 'Revert last change', action: 'ui.revert' } }]
+            : []),
+        ],
       },
       {
         type: 'row',

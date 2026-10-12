@@ -36,6 +36,15 @@ describe('scaffoldTree', () => {
     expect(JSON.stringify(scaffoldTree(transcript))).toContain('agent exited with code 1')
   })
 
+  it('offers a revert only when something actually failed', () => {
+    const json = JSON.stringify(scaffoldTree(empty()))
+    expect(json).not.toContain('ui.revert')
+
+    const withNotices = JSON.stringify(scaffoldTree(empty(), { notices: ['bad (boom)'] }))
+    expect(withNotices).toContain('bad (boom)')
+    expect(withNotices).toContain('ui.revert')
+  })
+
   it('carries the draft into the input so a re-render does not lose it', () => {
     const tree = scaffoldTree(empty(), { draft: 'half typed' })
     expect(JSON.stringify(tree)).toContain('half typed')
