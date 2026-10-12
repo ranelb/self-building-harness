@@ -1,0 +1,81 @@
+/**
+ * The client end of the core's WebSocket.
+ *
+ * Uses the global `WebSocket`, which exists in both the Tauri webview and Node,
+ * so the same code is exercised by the tests and shipped in the app.
+ */
+import type { ClientToCore, UiEvent } from '../../../shared/protocol.ts'
+
+export interface Stream {
+  send(message: ClientToCore): void
+  onEvent(cb: (event: UiEvent) => void): void
+  close(): void
+}
+
+const MAX_BACKOFF_MS = 10_000
+
+export function connectStream(url: string): Stream {
+  const listeners: ((event: UiEvent) => void)[] = []
+  const queue: string[] = []
+  let socket: WebSocket | null = null
+  let closed = false
+  let attempt = 0
+  let timer: ReturnType<typeof setTimeout> | null = null
+
+  const open = () => {
+    if (closed) return
+    const ws = new WebSocket(url)
+    socket = ws
+
+    ws.onopen = () => {
+      attempt = 0
+      while (queue.length > 0) {
+        const data = queue.shift()
+        if (data !== undefined) ws.send(data)
+      }
+    }
+
+    ws.onmessage = (message) => {
+      let parsed: any
+      try {
+        parsed = JSON.parse(String(message.data))
+      } catch {
+        return
+      }
+      if (parsed?.type === 'event' && parsed.event) {
+        for (const listener of listeners) listener(parsed.event as UiEvent)
+      }
+    }
+
+    ws.onclose = () => {
+      if (closed) return
+      attempt += 1
+      const delay = Math.min(1000 * 2 ** (attempt - 1), MAX_BACKOFF_MS)
+      timer = setTimeout(open, delay)
+    }
+
+    ws.onerror = () => {
+      // `onclose` always follows; reconnection is handled there.
+    }
+  }
+
+  open()
+
+  return {
+    send(message) {
+      const data = JSON.stringify(message)
+      if (socket && socket.readyState === WebSocket.OPEN) socket.send(data)
+      else queue.push(data)
+    },
+
+    onEvent(cb) {
+      listeners.push(cb)
+    },
+
+    close() {
+      closed = true
+      if (timer !== null) clearTimeout(timer)
+      socket?.close()
+    },
+  }
+}

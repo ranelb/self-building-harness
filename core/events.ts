@@ -1,16 +1,12 @@
 /**
- * The core's event vocabulary. The UI speaks this and nothing else — no ACP
- * shapes ever cross into the frontend.
+ * Normalizing ACP into the UI's vocabulary.
+ *
+ * The event type itself lives in `shared/protocol.ts` — the UI speaks it too, and
+ * UI code must not import from `core/`.
  */
+import type { UiEvent } from '../shared/protocol.ts'
 
-export type UiEvent =
-  | { type: 'chunk'; text: string }
-  | { type: 'thought'; text: string }
-  | { type: 'tool'; toolCallId: string; title: string; status?: string }
-  | { type: 'permission.requested'; requestId: string; title: string }
-  | { type: 'turn.started' }
-  | { type: 'turn.finished'; stopReason: string }
-  | { type: 'error'; message: string }
+export type { UiEvent } from '../shared/protocol.ts'
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
