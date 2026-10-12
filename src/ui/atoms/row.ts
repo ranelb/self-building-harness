@@ -1,8 +1,9 @@
-import { applyLayout, registerAtom, renderChildren, str, type RenderContext, type UiNode } from '../tree/render.ts'
+import { applyLayout, registerComponent, setLive, str } from '../tree/render.ts'
 
-registerAtom({
+registerComponent({
   name: 'row',
-  render(node: UiNode, ctx: RenderContext): Node {
+  container: true,
+  create(node, ctx) {
     const el = document.createElement('div')
     el.setAttribute('data-atom', 'row')
     el.style.display = 'flex'
@@ -10,7 +11,14 @@ registerAtom({
     el.style.gap = str(node.props?.gap, '0.5rem')
     el.style.alignItems = str(node.props?.align, 'center')
     applyLayout(el, node)
-    renderChildren(node, ctx, el)
+    setLive(el, node, ctx)
     return el
+  },
+  update(el, node, ctx) {
+    setLive(el, node, ctx)
+    const element = el as HTMLElement
+    element.style.gap = str(node.props?.gap, '0.5rem')
+    element.style.alignItems = str(node.props?.align, 'center')
+    applyLayout(element, node)
   },
 })

@@ -1,15 +1,31 @@
-import { registerAtom, str, type RenderContext, type UiNode } from '../tree/render.ts'
+import { registerComponent, setLive, str, type UiNode } from '../tree/render.ts'
 import { renderMarkdown } from '../tree/markdown.ts'
 
-registerAtom({
+const PAINTED = Symbol.for('sbh.markdown.painted')
+
+const paint = (el: HTMLElement, node: UiNode): void => {
+  const source = str(node.props?.value)
+  if ((el as unknown as Record<symbol, unknown>)[PAINTED] === source) return
+  ;(el as unknown as Record<symbol, unknown>)[PAINTED] = source
+  el.replaceChildren()
+  el.appendChild(renderMarkdown(source))
+}
+
+registerComponent({
   name: 'markdown',
-  // The one atom that turns agent-authored prose into structure. It builds DOM
-  // nodes directly (see tree/markdown.ts) so markup is inert.
-  render(node: UiNode, _ctx: RenderContext): Node {
+  // The one component that turns model-authored prose into structure. It builds
+  // DOM nodes (see tree/markdown.ts), so markup stays inert even though
+  // components themselves are trusted code.
+  create(node, ctx) {
     const el = document.createElement('div')
     el.setAttribute('data-atom', 'markdown')
     el.className = 'sbh-markdown'
-    el.appendChild(renderMarkdown(str(node.props?.value)))
+    paint(el, node)
+    setLive(el, node, ctx)
     return el
+  },
+  update(el, node, ctx) {
+    setLive(el, node, ctx)
+    paint(el as HTMLElement, node)
   },
 })

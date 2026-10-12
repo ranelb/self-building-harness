@@ -1,11 +1,17 @@
-import { registerAtom, str, type RenderContext, type UiNode } from '../tree/render.ts'
+import { registerComponent, setLive, str } from '../tree/render.ts'
 
-registerAtom({
+registerComponent({
   name: 'text',
-  render(node: UiNode, _ctx: RenderContext): Node {
+  create(node, ctx) {
     const el = document.createElement('span')
     el.setAttribute('data-atom', 'text')
     el.textContent = str(node.props?.value)
+    setLive(el, node, ctx)
     return el
+  },
+  update(el, node, ctx) {
+    setLive(el, node, ctx)
+    const value = str(node.props?.value)
+    if (el.textContent !== value) el.textContent = value
   },
 })

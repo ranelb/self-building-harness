@@ -1,14 +1,16 @@
 /**
- * The tree renderer.
+ * The tree renderer and the component registry.
  *
- * Walks a declarative JSON tree and instantiates host atoms. There is no HTML
- * in the vocabulary: an agent's node names an atom, and only registered atoms
- * can render anything. Unknown or broken nodes become visible placeholders
- * rather than exceptions, so a bad agent-authored panel fails loudly instead of
- * taking the window down.
+ * A component is a function over a node: `create` mounts it, `update` reconciles
+ * it in place. That contract is deliberately the same one the built-in atoms use,
+ * because agent-authored components are loaded through the very same registry —
+ * there is no second plugin system.
  *
- * Atoms are dumb by contract: they read `node.props`, `ctx.tokens` and
- * `ctx.dispatch`, and never import from `core/`.
+ * Two rules hold regardless of how much we trust component code:
+ *   - a component that throws, or an unknown type, renders as a labelled
+ *     placeholder rather than taking the window down;
+ *   - prose that arrives from a model goes through node-building (see
+ *     `markdown.ts`), never `innerHTML`.
  */
 
 export interface UiNode {
@@ -20,23 +22,41 @@ export interface UiNode {
 export interface RenderContext {
   /** Emit a named action for the host to handle. */
   dispatch(action: string, payload?: unknown): void
-  /** Theme tokens (CSS custom properties) available to atoms. */
+  /** Theme tokens available to components. */
   tokens: Record<string, string>
 }
 
-export interface AtomDefinition {
+export interface Component {
   name: string
-  render(node: UiNode, ctx: RenderContext): Node
+  /** Create the element. Must NOT append children when `container` is set. */
+  create(node: UiNode, ctx: RenderContext): Node
+  /**
+   * Reconcile the element in place. Omitting it means the element is replaced on
+   * every update, which discards its state — declare one if the component holds
+   * focus, scroll, canvas buffers or animation.
+   */
+  update?(el: Node, node: UiNode, ctx: RenderContext): void
+  /** The renderer owns this element's children and reconciles them. */
+  container?: boolean
 }
 
-const atoms = new Map<string, AtomDefinition>()
+const components = new Map<string, Component>()
 
-export function registerAtom(definition: AtomDefinition): void {
-  atoms.set(definition.name, definition)
+/** Marks the node type an element was built for, so patching can detect a swap. */
+const TYPE = Symbol.for('sbh.nodeType')
+
+type Tagged = Node & { [TYPE]?: string }
+
+export function registerComponent(component: Component): void {
+  components.set(component.name, component)
 }
 
-export function registeredAtoms(): string[] {
-  return [...atoms.keys()].sort()
+export function registeredComponents(): string[] {
+  return [...components.keys()].sort()
+}
+
+export function resolveComponent(type: string): Component | undefined {
+  return components.get(type)
 }
 
 const placeholder = (attr: string, value: string, text: string): HTMLElement => {
@@ -46,34 +66,107 @@ const placeholder = (attr: string, value: string, text: string): HTMLElement => 
   return el
 }
 
-export function renderTree(node: UiNode, ctx: RenderContext): Node {
+function mount(node: UiNode, ctx: RenderContext): Node {
   if (!node || typeof node !== 'object' || typeof node.type !== 'string') {
     return placeholder('data-invalid', 'true', 'invalid node')
   }
 
-  const atom = atoms.get(node.type)
-  if (!atom) {
-    return placeholder('data-unknown', node.type, `unknown atom: ${node.type}`)
+  const component = components.get(node.type)
+  if (!component) {
+    return placeholder('data-unknown', node.type, `unknown component: ${node.type}`)
+  }
+
+  let el: Node
+  try {
+    el = component.create(node, ctx)
+  } catch (err) {
+    return placeholder('data-error', node.type, `component failed: ${node.type}: ${(err as Error).message}`)
+  }
+
+  ;(el as Tagged)[TYPE] = node.type
+  if (component.container) reconcileChildren(el, node, ctx)
+  return el
+}
+
+/**
+ * Reconcile `el` to match `node`, returning the element to use — the same one
+ * when the type matches, a replacement otherwise.
+ */
+export function patchTree(el: Node, node: UiNode, ctx: RenderContext): Node {
+  const tagged = el as Tagged
+
+  if (!node || typeof node !== 'object' || typeof node.type !== 'string') {
+    return tagged[TYPE] === undefined
+      ? el
+      : placeholder('data-invalid', 'true', 'invalid node')
+  }
+
+  const component = components.get(node.type)
+  if (!component || tagged[TYPE] !== node.type) {
+    return mount(node, ctx)
   }
 
   try {
-    return atom.render(node, ctx)
+    component.update?.(el, node, ctx)
   } catch (err) {
-    return placeholder('data-error', node.type, `atom failed: ${node.type}: ${(err as Error).message}`)
+    return placeholder('data-error', node.type, `component failed: ${node.type}: ${(err as Error).message}`)
+  }
+
+  if (component.container) reconcileChildren(el, node, ctx)
+  return el
+}
+
+/**
+ * Reconcile children positionally.
+ *
+ * Positional is sufficient while lists only append (the transcript does). A list
+ * that reorders needs keys, which is not built yet.
+ */
+function reconcileChildren(parent: Node, node: UiNode, ctx: RenderContext): void {
+  const desired = node.children ?? []
+
+  for (let index = 0; index < desired.length; index += 1) {
+    const child = desired[index] as UiNode
+    const existing = parent.childNodes[index]
+
+    if (!existing) {
+      parent.appendChild(mount(child, ctx))
+      continue
+    }
+
+    const next = patchTree(existing, child, ctx)
+    if (next !== existing) parent.replaceChild(next, existing)
+  }
+
+  while (parent.childNodes.length > desired.length) {
+    parent.removeChild(parent.lastChild as Node)
   }
 }
 
-/** Render every child of a node into `parent`. Atoms use this for containers. */
-export function renderChildren(node: UiNode, ctx: RenderContext, parent: Node): void {
-  for (const child of node.children ?? []) {
-    parent.appendChild(renderTree(child, ctx))
+/** Mount or reconcile a single root node inside `parent`. */
+export function renderInto(parent: Node, node: UiNode, ctx: RenderContext): void {
+  const existing = parent.firstChild
+  if (!existing) {
+    parent.appendChild(mount(node, ctx))
+    return
   }
+
+  const next = patchTree(existing, node, ctx)
+  if (next !== existing) parent.replaceChild(next, existing)
+
+  while (parent.childNodes.length > 1) {
+    parent.removeChild(parent.lastChild as Node)
+  }
+}
+
+/** One-shot mount, for tests and isolated rendering. */
+export function renderTree(node: UiNode, ctx: RenderContext): Node {
+  return mount(node, ctx)
 }
 
 /**
  * Shared layout props, so a template can lay itself out without injecting CSS.
- * Deliberately a small fixed vocabulary rather than a style passthrough: free
- * CSS from an agent-authored tree is an exfiltration surface (url() loads).
+ * Deliberately a small fixed vocabulary rather than a style passthrough.
  */
 export function applyLayout(el: HTMLElement, node: UiNode): void {
   if (node.props?.grow) {
@@ -85,3 +178,25 @@ export function applyLayout(el: HTMLElement, node: UiNode): void {
 /** Read a prop as a string, with a fallback. */
 export const str = (value: unknown, fallback = ''): string =>
   typeof value === 'string' ? value : value === undefined || value === null ? fallback : String(value)
+
+const LIVE = Symbol.for('sbh.live')
+
+export interface LiveNode {
+  node: UiNode
+  ctx: RenderContext
+}
+
+/**
+ * Record the node and context an element currently represents.
+ *
+ * Event listeners are installed once at `create` time but must dispatch against
+ * the *latest* node and context — closing over the ones from mount is how an
+ * earlier bug sent a stale draft.
+ */
+export function setLive(el: Node, node: UiNode, ctx: RenderContext): void {
+  ;(el as Tagged & { [LIVE]?: LiveNode })[LIVE] = { node, ctx }
+}
+
+export function getLive(el: Node): LiveNode | undefined {
+  return (el as Tagged & { [LIVE]?: LiveNode })[LIVE]
+}

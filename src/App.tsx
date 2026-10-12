@@ -9,8 +9,7 @@ import {
   withUserMessage,
   type Transcript,
 } from './ui/state/transcript.ts'
-import { renderTree, type RenderContext } from './ui/tree/render.ts'
-import { captureInputFocus, restoreInputFocus } from './ui/tree/focus.ts'
+import { renderInto, type RenderContext } from './ui/tree/render.ts'
 
 const DEFAULT_CORE_URL = import.meta.env.VITE_CORE_URL ?? 'ws://127.0.0.1:8787/ws'
 
@@ -73,20 +72,13 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
     },
   }
 
-  // Re-render the tree whenever state changes. The tree is data, so "render" is
-  // just replacing children; there is no second source of truth in the DOM.
-  //
-  // Rebuilding the tree replaces the focused input, which would swallow the rest
-  // of a typed word, so focus and caret are restored across the rebuild. A real
-  // diffing renderer is M2 work; this is the honest M1 cost of rebuilding.
+  // Reconcile rather than rebuild. Component instances (and therefore focus,
+  // caret, scroll position and any future canvas state) survive an update; the
+  // tree stays the single source of truth for *what* is rendered.
   useEffect(() => {
     const element = host.current
     if (!element) return
-
-    const focus = captureInputFocus(element)
-    element.replaceChildren()
-    element.appendChild(renderTree(scaffoldTree(transcript, { draft }), context))
-    restoreInputFocus(element, focus)
+    renderInto(element, scaffoldTree(transcript, { draft }), context)
   })
 
   return <div data-sbh-root ref={host} />

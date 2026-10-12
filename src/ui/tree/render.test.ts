@@ -1,15 +1,15 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest'
 import '../atoms/index.ts'
-import { registerAtom, registeredAtoms, renderTree, type RenderContext } from './render.ts'
+import { registerComponent, registeredComponents, renderTree, type RenderContext } from './render.ts'
 
-// Captured before any test registers its own throwaway atom.
-const V0_ATOMS = registeredAtoms()
+// Captured before any test registers its own throwaway component.
+const BUILT_INS = registeredComponents()
 
 const calls: unknown[] = []
 const ctx: RenderContext = {
-  dispatch: (action, payload) => calls.push(payload === undefined ? action : { action, payload }),
   tokens: {},
+  dispatch: (action, payload) => calls.push(payload === undefined ? action : { action, payload }),
 }
 
 describe('renderTree', () => {
@@ -37,15 +37,16 @@ describe('renderTree', () => {
     expect(el.getAttribute('data-unknown')).toBe('invented')
   })
 
-  it('renders an atom that throws as an error placeholder, not a crash', () => {
-    registerAtom({
+  it('renders a component that throws as an error placeholder, not a crash', () => {
+    registerComponent({
       name: 'explodes',
-      render: () => {
+      create: () => {
         throw new Error('boom')
       },
     })
     const el = renderTree({ type: 'explodes' }, ctx) as HTMLElement
     expect(el.getAttribute('data-error')).toBe('explodes')
+    expect(el.textContent).toContain('boom')
   })
 
   it('survives a malformed node without throwing', () => {
@@ -82,7 +83,16 @@ describe('renderTree', () => {
     expect(calls).toEqual([{ action: 'harness.change', payload: { value: 'goose' } }])
   })
 
-  it('registers exactly the v0 atom set', () => {
-    expect(V0_ATOMS).toEqual(['button', 'column', 'input', 'markdown', 'row', 'scroll', 'select', 'text'])
+  it('registers exactly the built-in component set', () => {
+    expect(BUILT_INS).toEqual([
+      'button',
+      'column',
+      'input',
+      'markdown',
+      'row',
+      'scroll',
+      'select',
+      'text',
+    ])
   })
 })
