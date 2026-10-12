@@ -125,3 +125,23 @@ export const component = {
   `innerHTML`. Components are trusted code; the text they display is not.
 
 `examples/components/button.js` is a working override to copy.
+
+## Hot reload
+
+The core watches `components/` and `theme.json` (debounced) and pushes an
+`invalidate` message over the WebSocket; the client re-fetches. **Edit a file, look
+at the app — no restart, no reload.** A deleted component unregisters; a broken one
+stays reported. Changing `theme.json` re-applies the CSS variables, so everything
+follows instantly without a re-render.
+
+## Theming
+
+`~/.config/sbh/theme.json` is written with the default on first start. It is a
+**partial** override: state only what changes, the rest is merged from the default
+(and unknown keys are ignored, so a typo cannot blank the UI).
+
+Reference tokens as `var(--sbh-color-accent)`, `var(--sbh-space-md)`,
+`var(--sbh-radius-md)`, `var(--sbh-font-mono)` and friends — never a literal colour.
+That is what keeps independently-authored components looking like one app, and it is
+why a theme change needs no code change anywhere. The built-in controls in
+`src/ui/atoms/style.ts` are the worked example.
