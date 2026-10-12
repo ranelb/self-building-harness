@@ -797,3 +797,42 @@ works, the other three are already covered.
 
 Safety is already in place: a broken layout fails exactly like a broken component —
 named on screen, skipped, with **Revert last change** available.
+
+### Probe results (2026-10-12) — ran before building
+
+A throwaway component exercising all four asks, mounted by temporarily patching the
+scaffold. Verdict: **every component-level capability already works.** The blockers
+are structural, not capability.
+
+| Ask | Today | Verdict |
+|---|---|---|
+| "resize this" (leaf) | `resize: both` — computed style confirmed | works |
+| "make this draggable" | real pointer drag moved it `translate(50px,30px)` | works |
+| "add a setting" | persisted to `localStorage`, survived | works, unsound |
+| "build a tiny idle game" | `rAF` loop, 43 frames in 700ms | works, **leaks** |
+| place a component anywhere | **impossible** — needed a temporary patch to `scaffoldTree` | blocked (#2) |
+| resize a *pane* | same | blocked (#2) |
+
+**The leak, demonstrated:** hot-reloading the component replaced the element, and the
+old `rAF` loop kept ticking at full rate against a detached node — 2 loops still
+running after one edit (`framesEach: [49, 49]`). Every hot reload leaks one immortal
+loop; twenty edits, twenty loops. A `destroy` hook is not hygiene here, it is
+required.
+
+**The probe also paid for itself:** it exposed that hot reload only worked for *new*
+components. The browser caches ES modules by URL for the page's lifetime and ignores
+`cache-control`, so re-importing the same URL returned the stale module and editing
+an existing component did nothing. Module URLs now carry `?rev=<timestamp>`. The
+earlier verification missed it because it only ever *added* files.
+
+### Revised order
+
+1. **`destroy` hook** — confirmed necessary (leak above), small.
+2. **Agent-authorable layout** — confirmed necessary (could not place the probe), and
+   the addition that makes "the agent authors its own interface" literally true.
+3. **State store** — **downgraded**: `localStorage` means "add a setting" already
+   functions. It is a quality improvement (shared between components, visible to the
+   agent, tracked by the undo), not a blocker. Do it after the first two.
+
+Then replay the four asks as the acceptance pass, with the idle game as the hardest
+case.
