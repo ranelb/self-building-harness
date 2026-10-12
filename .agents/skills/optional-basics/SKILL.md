@@ -107,20 +107,30 @@ bar — that is a shell plugin in a different toolkit, not a webview. It can *di
 anything the core can read, and the core could equally publish a file a bar consumes.
 Say that plainly rather than implying the widget will appear in the bar.
 
-## 4. Sessions sidebar — **blocked**
+## 4. Sessions sidebar — buildable for viewing, blocked for resuming
 
 **Why:** a user wants to reopen yesterday's conversation.
 
-**Build:** a component listing past sessions that dispatches a resume action.
+**Build:** a component reading `ctx.host.sessions` — `{ id, title, cwd, startedAt,
+updatedAt }`, newest first — and dispatching `session.open` with an id. The host
+fetches `GET /sessions/<id>` and replaces the transcript with its turns. The default
+layout already ships this as the `sessions` host component; restyle it or write your
+own.
 
-**Needs:** session listing and resume. **Neither exists.** The core holds one
-in-memory session created at startup; nothing lists what came before, and there is no
-action that switches sessions. `Get /history` lists *commits of the UI directory*,
-which is not the same thing.
+**Needs:** nothing new, for viewing. `GET /sessions` and `GET /sessions/<id>` exist,
+are read-only, and read the harness's own store.
 
-**To unblock:** a session API in the core — list, read, resume — reading the harness's
-native session store (the design says read it, never write it). That is core work,
-not a component.
+**Acceptance:** past conversations are listed with titles you recognise, and opening
+one shows its turns.
+
+**Half-blocked, and say exactly this much:** viewing is not resuming. Opening a
+session replaces what is on screen; the agent is still attached to its own session,
+so sending a message starts a new one. Resuming needs the core to open an *existing*
+harness session, which does not exist yet. Report that gap; do not imply the sidebar
+continues the conversation.
+
+**To unblock:** the core opening an existing harness session — `session/load` over
+ACP, or the harness's own resume flag. That is core work, not a component.
 
 ---
 
@@ -129,8 +139,11 @@ not a component.
 When asked to run this as a benchmark, answer per recipe with one of:
 
 - **built** — it works, and say which of the three survival checks passed;
+- **partial** — say exactly which half works and which does not (the sessions sidebar
+  is the current example: viewing yes, resuming no);
 - **blocked** — name the missing host capability, in one line, and what would provide
   it.
 
 Do not mark a recipe built because a component renders something. The acceptance
-criterion is the behaviour, and for a blocked recipe the honest output is the gap.
+criterion is the behaviour, and for a blocked or partial recipe the honest output is
+the gap.
