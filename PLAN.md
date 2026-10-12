@@ -547,8 +547,10 @@ git add src/ui/state && git commit -m "feat(ui): transcript store and stream cli
 **Interfaces:**
 - Consumes: `Transcript` (Task 7), `UiNode` (Task 6).
 - Produces: `scaffoldTree(t: Transcript): UiNode` — the empty box: a `scroll`
-  column of `markdown` messages, a `text` input, a `button`, and two `select`s
-  (model, harness).
+  column of `markdown` messages, a `text` input, a `button`, two `select`s
+  (model, harness), and — when `t.pendingPermission` is non-empty — a permission
+  card with an approve and a deny `button` (actions `permission.allow` /
+  `permission.deny`, carrying the `requestId`).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -568,6 +570,16 @@ describe('scaffoldTree', () => {
   it('renders transcript text as markdown nodes', () => {
     const t = applyEvent(empty(), { type: 'chunk', text: 'hi' })
     expect(JSON.stringify(scaffoldTree(t))).toContain('hi')
+  })
+  it('renders a permission card with approve and deny while a request is pending', () => {
+    const t = applyEvent(empty(), { type: 'permission.requested', requestId: 'r1', title: 'Run ls' })
+    const tree = JSON.stringify(scaffoldTree(t))
+    expect(tree).toContain('Run ls')
+    expect(tree).toContain('permission.allow')
+    expect(tree).toContain('permission.deny')
+  })
+  it('renders no permission card when nothing is pending', () => {
+    expect(JSON.stringify(scaffoldTree(empty()))).not.toContain('permission.allow')
   })
 })
 ```
@@ -621,7 +633,8 @@ interfaces depend on the real shapes M1 produces. Its scope, from the spec:
 - **Type consistency:** `UiEvent` is defined once in Task 3 and consumed unchanged
   in Tasks 4, 5 and 7. `UiNode` is defined in Task 6 and consumed in Task 8.
   `AcpConnection` is defined in Task 3 and consumed in Tasks 4 and 5.
-- **Review Focus:** each of the five has a home — (1) Task 4, (2) Task 3
+- **Review Focus:** each of the five has a home — (1) Task 4 for the gate and
+  Task 8 for the visible card, (2) Task 3
   `crash-mid-turn`, (3) Task 2 `split-multibyte` plus the coalescing test in
   Task 7, (4) Task 3 `unknown-update`, (5) not covered by a test in M1 —
   virtualization is deliberately deferred, so this is an accepted gap, not an
