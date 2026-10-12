@@ -42,10 +42,14 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
           return
 
         case 'prompt.send': {
-          const text = draft.trim()
+          // Read the live input, not the last rendered state: at typing speed the
+          // state can lag a keystroke, which silently truncated sent prompts.
+          const live = host.current?.querySelector<HTMLInputElement>('input[data-atom="input"]')
+          const text = (live?.value ?? draft).trim()
           if (!text) return
           setTranscript((previous) => withUserMessage(previous, text))
           stream.current?.send({ type: 'prompt', text })
+          if (live) live.value = ''
           setDraft('')
           return
         }

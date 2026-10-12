@@ -44,26 +44,40 @@ export function scaffoldTree(transcript: Transcript, options: ScaffoldOptions = 
 
   return {
     type: 'column',
+    props: { grow: true },
     children: [
-      { type: 'scroll', children: messages },
-      { type: 'column', children: permission },
-      { type: 'input', props: { value: draft, placeholder: 'Message', action: 'prompt.draft' } },
-      { type: 'button', props: { label: 'Send', action: 'prompt.send' } },
       {
-        type: 'select',
-        props: {
-          action: 'harness.change',
-          value: harness,
-          options: [{ value: 'pi', label: 'Pi' }],
-        },
+        type: 'row',
+        children: [
+          {
+            type: 'select',
+            props: {
+              action: 'harness.change',
+              value: harness,
+              options: [{ value: 'pi', label: 'Pi' }],
+            },
+          },
+          {
+            type: 'select',
+            props: {
+              action: 'model.change',
+              value: model,
+              options: [{ value: 'default', label: 'Default' }],
+            },
+          },
+        ],
       },
+      { type: 'scroll', props: { grow: true }, children: messages },
+      { type: 'column', children: permission },
       {
-        type: 'select',
-        props: {
-          action: 'model.change',
-          value: model,
-          options: [{ value: 'default', label: 'Default' }],
-        },
+        type: 'row',
+        children: [
+          {
+            type: 'input',
+            props: { value: draft, placeholder: 'Message', action: 'prompt.draft', grow: true },
+          },
+          { type: 'button', props: { label: 'Send', action: 'prompt.send' } },
+        ],
       },
     ],
   }

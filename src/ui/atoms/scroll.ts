@@ -1,4 +1,4 @@
-import { registerAtom, renderChildren, type RenderContext, type UiNode } from '../tree/render.ts'
+import { applyLayout, registerAtom, renderChildren, type RenderContext, type UiNode } from '../tree/render.ts'
 
 registerAtom({
   name: 'scroll',
@@ -7,6 +7,7 @@ registerAtom({
     el.setAttribute('data-atom', 'scroll')
     el.style.overflowY = 'auto'
     el.style.minHeight = '0'
+    applyLayout(el, node)
     renderChildren(node, ctx, el)
     return el
   },

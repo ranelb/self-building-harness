@@ -1,15 +1,15 @@
 import { registerAtom, str, type RenderContext, type UiNode } from '../tree/render.ts'
+import { renderMarkdown } from '../tree/markdown.ts'
 
 registerAtom({
   name: 'markdown',
+  // The one atom that turns agent-authored prose into structure. It builds DOM
+  // nodes directly (see tree/markdown.ts) so markup is inert.
   render(node: UiNode, _ctx: RenderContext): Node {
     const el = document.createElement('div')
     el.setAttribute('data-atom', 'markdown')
-    // M1 renders plain text with preserved whitespace. This atom is the one
-    // place a real markdown renderer will live; until then `textContent` is the
-    // safe choice — agent-authored prose never becomes markup.
-    el.textContent = str(node.props?.value)
-    el.style.whiteSpace = 'pre-wrap'
+    el.className = 'sbh-markdown'
+    el.appendChild(renderMarkdown(str(node.props?.value)))
     return el
   },
 })

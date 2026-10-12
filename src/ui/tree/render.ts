@@ -70,6 +70,18 @@ export function renderChildren(node: UiNode, ctx: RenderContext, parent: Node): 
   }
 }
 
+/**
+ * Shared layout props, so a template can lay itself out without injecting CSS.
+ * Deliberately a small fixed vocabulary rather than a style passthrough: free
+ * CSS from an agent-authored tree is an exfiltration surface (url() loads).
+ */
+export function applyLayout(el: HTMLElement, node: UiNode): void {
+  if (node.props?.grow) {
+    el.style.flexGrow = '1'
+    el.style.minWidth = '0'
+  }
+}
+
 /** Read a prop as a string, with a fallback. */
 export const str = (value: unknown, fallback = ''): string =>
   typeof value === 'string' ? value : value === undefined || value === null ? fallback : String(value)

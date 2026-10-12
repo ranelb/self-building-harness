@@ -11,6 +11,7 @@
 
 export interface FocusState {
   caret: number
+  value: string
 }
 
 const INPUT_SELECTOR = 'input[data-atom="input"]'
@@ -19,13 +20,17 @@ export function captureInputFocus(root: ParentNode): FocusState | null {
   const document = root.ownerDocument
   const active = document?.activeElement as HTMLInputElement | null
   if (!active || active.dataset.atom !== 'input') return null
-  return { caret: active.selectionStart ?? active.value.length }
+  return { caret: active.selectionStart ?? active.value.length, value: active.value }
 }
 
 export function restoreInputFocus(root: ParentNode, state: FocusState | null): void {
   if (!state) return
   const input = root.querySelector<HTMLInputElement>(INPUT_SELECTOR)
   if (!input) return
+  // The live DOM value wins over whatever the last render put there: at typing
+  // speed a keystroke can land while the rebuild is in flight, and the rendered
+  // value would otherwise clobber it and drop characters.
+  if (input.value !== state.value) input.value = state.value
   input.focus()
   const position = Math.min(state.caret, input.value.length)
   input.setSelectionRange(position, position)

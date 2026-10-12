@@ -1,4 +1,4 @@
-import { registerAtom, renderChildren, str, type RenderContext, type UiNode } from '../tree/render.ts'
+import { applyLayout, registerAtom, renderChildren, str, type RenderContext, type UiNode } from '../tree/render.ts'
 
 registerAtom({
   name: 'column',
@@ -8,6 +8,7 @@ registerAtom({
     el.style.display = 'flex'
     el.style.flexDirection = 'column'
     el.style.gap = str(node.props?.gap, '0.5rem')
+    applyLayout(el, node)
     renderChildren(node, ctx, el)
     return el
   },

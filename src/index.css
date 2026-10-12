@@ -3,6 +3,58 @@
   font-family: system-ui, sans-serif;
 }
 
-body {
+html,
+body,
+#app {
+  height: 100%;
   margin: 0;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+/* The tree root must fill #app, or the growing scroll pane has nothing to grow
+   into and collapses to zero height. */
+#app > [data-sbh-root] {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+body {
+  background: #16161a;
+  color: #e6e6e6;
+}
+
+.sbh-markdown > :first-child {
+  margin-top: 0;
+}
+
+.sbh-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.sbh-markdown p,
+.sbh-markdown ul,
+.sbh-markdown pre {
+  margin: 0 0 0.5rem;
+}
+
+.sbh-markdown pre {
+  background: #0f0f12;
+  padding: 0.5rem;
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+.sbh-markdown h1,
+.sbh-markdown h2,
+.sbh-markdown h3 {
+  margin: 0.5rem 0 0.4rem;
+  font-size: 1.05rem;
 }

@@ -1,4 +1,4 @@
-import { registerAtom, str, type RenderContext, type UiNode } from '../tree/render.ts'
+import { applyLayout, registerAtom, str, type RenderContext, type UiNode } from '../tree/render.ts'
 
 registerAtom({
   name: 'input',
@@ -10,6 +10,7 @@ registerAtom({
     if (node.props?.placeholder !== undefined) {
       el.placeholder = str(node.props.placeholder)
     }
+    applyLayout(el, node)
     el.addEventListener('input', () => ctx.dispatch(action, { value: el.value }))
     return el
   },

@@ -83,6 +83,6 @@ describe('renderTree', () => {
   })
 
   it('registers exactly the v0 atom set', () => {
-    expect(V0_ATOMS).toEqual(['button', 'column', 'input', 'markdown', 'scroll', 'select', 'text'])
+    expect(V0_ATOMS).toEqual(['button', 'column', 'input', 'markdown', 'row', 'scroll', 'select', 'text'])
   })
 })
