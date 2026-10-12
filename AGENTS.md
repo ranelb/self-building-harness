@@ -88,3 +88,40 @@ and the permission card. `SBH_BACKEND=fake:permission` exercises the gate.
 
 A plain `&` background process dies with the invoking shell — hence the systemd
 units. For the Tauri window: `npx tauri dev` (first `cargo` build is ~45 s).
+
+## Writing a component
+
+Components are the extension surface. A built-in and an agent-authored component
+are the same object; loading one with a built-in's name **overrides** it. Drop
+`.js` files into `~/.config/sbh/components/` (override with `SBH_COMPONENTS_DIR`).
+
+```js
+export const component = {
+  name: 'my-panel',
+  create(node, ctx) {
+    const el = document.createElement('div')
+    ctx.bind(el, node)          // remember this node
+    el.addEventListener('click', () => {
+      const live = ctx.latest(el)     // read the *current* node, not the mounted one
+      if (live) live.ctx.dispatch('my.action', { id: live.node.props.id })
+    })
+    return el
+  },
+  update(el, node, ctx) { ctx.bind(el, node) },   // omit and the element is replaced
+  container: false,        // true = the renderer owns and reconciles your children
+}
+```
+
+- `ctx.bind` / `ctx.latest` exist because a listener is installed once, at
+  `create` time, so it must read the latest node — a loaded module cannot import
+  the registry's internals.
+- Declare `update` for anything holding state (focus, scroll, canvas, animation).
+  Without it the element is replaced on every change.
+- `container: true` means the renderer appends and reconciles children; do not
+  append them yourself.
+- A component that throws, or fails to import, is reported by name on screen and
+  skipped. The built-ins always keep working — that is safe mode.
+- **Model-authored prose must still go through `renderMarkdown`**, never
+  `innerHTML`. Components are trusted code; the text they display is not.
+
+`examples/components/button.js` is a working override to copy.
