@@ -5,7 +5,7 @@
  * not match the contract is reported and skipped, and the built-ins keep working.
  * That is the safe mode — the app is always usable with its own components.
  */
-import { registerComponent, type Component } from '../tree/render.ts'
+import { registerComponent, unregisterComponent, type Component } from '../tree/render.ts'
 
 export interface LoadFailure {
   name: string
@@ -15,6 +15,8 @@ export interface LoadFailure {
 export interface LoadReport {
   loaded: string[]
   failed: LoadFailure[]
+  /** Components that used to be registered and are gone from the directory. */
+  removed: string[]
 }
 
 export interface LoadOptions {
@@ -44,12 +46,15 @@ const isComponent = (value: unknown): value is Component => {
   )
 }
 
+/** Names registered by the previous load, so a deletion can be detected. */
+let previouslyLoaded: string[] = []
+
 export async function loadComponents(options: LoadOptions): Promise<LoadReport> {
   const doFetch = options.fetchImpl ?? fetch
   const doImport =
     options.importImpl ?? ((url: string) => import(/* @vite-ignore */ url))
 
-  const report: LoadReport = { loaded: [], failed: [] }
+  const report: LoadReport = { loaded: [], failed: [], removed: [] }
 
   let names: string[] = []
   try {
@@ -78,6 +83,17 @@ export async function loadComponents(options: LoadOptions): Promise<LoadReport> 
       report.failed.push({ name, error: (err as Error).message })
     }
   }
+
+  // A component whose file was deleted must stop resolving, or hot reload leaves
+  // a ghost behind. A file that is merely broken is still present, so it stays.
+  const present = new Set([...report.loaded, ...report.failed.map((failure) => failure.name)])
+  for (const name of previouslyLoaded) {
+    if (!present.has(name)) {
+      unregisterComponent(name)
+      report.removed.push(name)
+    }
+  }
+  previouslyLoaded = [...report.loaded]
 
   return report
 }

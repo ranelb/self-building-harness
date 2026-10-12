@@ -80,6 +80,28 @@ describe('loadComponents', () => {
       fetchImpl: async () => jsonResponse({ components: 'not-an-array' }),
       importImpl: async () => ({}),
     })
-    expect(report).toEqual({ loaded: [], failed: [] })
+    expect(report).toEqual({ loaded: [], failed: [], removed: [] })
+  })
+
+  it('unregisters a component whose file has gone, and keeps a merely broken one', async () => {
+    const opts = (names: string[], failing: string[]) => ({
+      baseUrl: 'http://core',
+      fetchImpl: async () => jsonResponse({ components: names }),
+      importImpl: async (url: string) => {
+        const name = url.split('/').pop()!.replace('.js', '')
+        if (failing.includes(name)) throw new Error('boom')
+        return { component: fakeComponent(name) }
+      },
+    })
+
+    await loadComponents(opts(['kept', 'gone', 'broken'], []))
+    expect(registeredComponents()).toContain('gone')
+
+    // `gone` is deleted; `broken` is now present but fails to import.
+    const report = await loadComponents(opts(['kept', 'broken'], ['broken']))
+
+    expect(report.removed).toEqual(['gone'])
+    expect(registeredComponents()).not.toContain('gone')
+    expect(registeredComponents()).toContain('kept')
   })
 })

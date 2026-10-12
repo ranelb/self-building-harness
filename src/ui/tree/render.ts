@@ -75,6 +75,11 @@ export function registeredComponents(): string[] {
   return [...components.keys()].sort()
 }
 
+/** Needed by hot reload: a component whose file was deleted must stop resolving. */
+export function unregisterComponent(name: string): void {
+  components.delete(name)
+}
+
 export function resolveComponent(type: string): Component | undefined {
   return components.get(type)
 }

@@ -20,4 +20,7 @@ export type ClientToCore =
   | { type: 'permission'; requestId: string; decision: 'allow' | 'deny' }
 
 /** Core -> client. */
-export type CoreToClient = { type: 'event'; event: UiEvent }
+export type CoreToClient =
+  | { type: 'event'; event: UiEvent }
+  /** A watched file changed; the client should re-fetch. Hot reload. */
+  | { type: 'invalidate'; what: 'components' | 'theme' }

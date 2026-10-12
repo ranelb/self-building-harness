@@ -11,6 +11,7 @@ import { connectAcp, type AcpConnection } from './acp/client.ts'
 import { resolveBackend } from './backends/registry.ts'
 import { ensureComponentsDir, listComponents, readComponent } from './components.ts'
 import { ensureThemeFile, readTheme } from './theme.ts'
+import { watchPaths } from './watch.ts'
 import { DENY_BY_DEFAULT, respondToPermission, type PermissionPolicy } from './acp/permissions.ts'
 import type { UiEvent } from './events.ts'
 
@@ -63,8 +64,10 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
   const clients = new Set<WebSocket>()
   let conn: AcpConnection | null = null
 
-  const broadcast = (event: UiEvent) => {
-    const payload = JSON.stringify({ type: 'event', event })
+  const broadcast = (event: UiEvent) => sendToAll({ type: 'event', event })
+
+  const sendToAll = (message: unknown) => {
+    const payload = JSON.stringify(message)
     for (const client of clients) {
       if (client.readyState === WebSocket.OPEN) client.send(payload)
     }
@@ -175,12 +178,25 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     http.listen(options.port ?? 0, host, () => resolve())
   })
 
+  // Hot reload: tell clients to re-fetch rather than pushing the content, so the
+  // client keeps ownership of import/validation/registration.
+  const componentWatcher = watchPaths([componentsDir], () =>
+    sendToAll({ type: 'invalidate', what: 'components' })
+  )
+  const configWatcher = watchPaths([configDir], (changed) => {
+    if (changed === 'theme.json' || changed === configDir) {
+      sendToAll({ type: 'invalidate', what: 'theme' })
+    }
+  })
+
   const address = http.address()
   const port = typeof address === 'object' && address !== null ? address.port : 0
 
   return {
     port,
     async close() {
+      componentWatcher.close()
+      configWatcher.close()
       conn?.close()
       for (const client of clients) client.terminate()
       clients.clear()

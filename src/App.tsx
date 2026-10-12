@@ -27,40 +27,39 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
   const host = useRef<HTMLDivElement>(null)
   const stream = useRef<Stream | null>(null)
 
+  // One effect owns the connection, the initial loads and every refresh, so hot
+  // reload and first paint go down exactly the same path.
   useEffect(() => {
+    const baseUrl = httpBaseFromWsUrl(coreUrl)
     const connection = connectStream(coreUrl)
-    connection.onEvent((event) => setTranscript((previous) => applyEvent(previous, event)))
     stream.current = connection
-    return () => connection.close()
-  }, [coreUrl])
-
-  // Agent-authored components load once, then the state change re-renders so any
-  // that published a component are usable. Failures are surfaced, not swallowed:
-  // the built-ins keep working and the broken ones are named on screen.
-  useEffect(() => {
-    const baseUrl = httpBaseFromWsUrl(coreUrl)
-    if (!baseUrl) return
     let cancelled = false
-    void loadComponents({ baseUrl }).then((report) => {
-      if (!cancelled) setComponents(report)
-    })
-    return () => {
-      cancelled = true
+
+    const refreshComponents = () => {
+      if (!baseUrl) return
+      void loadComponents({ baseUrl }).then((report) => {
+        if (!cancelled) setComponents(report)
+      })
     }
-  }, [coreUrl])
 
-  // Theme variables live on the document root, so everything — including the
-  // body background — follows a theme change without a re-render.
-  useEffect(() => {
-    const baseUrl = httpBaseFromWsUrl(coreUrl)
-    if (!baseUrl) return
-    let cancelled = false
-    void loadTheme(baseUrl).then((theme) => {
-      if (cancelled) return
-      setTokens(applyTheme(document.documentElement, theme))
-    })
+    const refreshTheme = () => {
+      if (!baseUrl) return
+      // Variables live on the document root, so everything — including the body
+      // background — follows a theme change with no re-render.
+      void loadTheme(baseUrl).then((theme) => {
+        if (!cancelled) setTokens(applyTheme(document.documentElement, theme))
+      })
+    }
+
+    connection.onEvent((event) => setTranscript((previous) => applyEvent(previous, event)))
+    connection.onInvalidate((what) => (what === 'components' ? refreshComponents() : refreshTheme()))
+
+    refreshComponents()
+    refreshTheme()
+
     return () => {
       cancelled = true
+      connection.close()
     }
   }, [coreUrl])
 
