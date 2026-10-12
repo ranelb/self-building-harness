@@ -46,6 +46,16 @@ export interface Component {
    * focus, scroll, canvas buffers or animation.
    */
   update?(el: Node, node: UiNode, ctx: RenderContext): void
+  /**
+   * Tear down before the element leaves the tree.
+   *
+   * Required for anything holding a timer, a `requestAnimationFrame` loop, or a
+   * listener on `window`/`document`: reconciliation replaces elements routinely
+   * (hot reload, an agent editing its own layout), and without this the loop keeps
+   * running against a detached node forever. Measured: one edit left two rAF loops
+   * both ticking at full rate.
+   */
+  destroy?(el: Node, node: UiNode, ctx: RenderContext): void
   /** The renderer owns this element's children and reconciles them. */
   container?: boolean
 }
@@ -110,8 +120,30 @@ function mount(node: UiNode, ctx: RenderContext): Node {
 
   ;(el as Tagged)[TYPE] = node.type
   ;(el as Tagged)[COMPONENT] = component
+  setLive(el, node, ctx)
   if (component.container) reconcileChildren(el, node, ctx)
   return el
+}
+
+/**
+ * Tear down an element and everything under it, deepest first.
+ *
+ * A cleanup that throws must not break the render that is already in flight, so
+ * each one is isolated.
+ */
+function destroyTree(el: Node, ctx: RenderContext): void {
+  for (const child of Array.from(el.childNodes)) destroyTree(child, ctx)
+
+  const component = (el as Tagged)[COMPONENT]
+  if (!component?.destroy) return
+
+  const live = getLive(el)
+  try {
+    component.destroy(el, live?.node ?? ({} as UiNode), live?.ctx ?? ctx)
+  } catch {
+    // A component that cannot clean up is not a reason to fail the render.
+  }
+  delete (el as Tagged)[COMPONENT]
 }
 
 /**
@@ -138,6 +170,7 @@ export function patchTree(el: Node, node: UiNode, ctx: RenderContext): Node {
     return placeholder('data-error', node.type, `component failed: ${node.type}: ${(err as Error).message}`)
   }
 
+  setLive(el, node, ctx)
   if (component.container) reconcileChildren(el, node, ctx)
   return el
 }
@@ -161,11 +194,16 @@ function reconcileChildren(parent: Node, node: UiNode, ctx: RenderContext): void
     }
 
     const next = patchTree(existing, child, ctx)
-    if (next !== existing) parent.replaceChild(next, existing)
+    if (next !== existing) {
+      destroyTree(existing, ctx)
+      parent.replaceChild(next, existing)
+    }
   }
 
   while (parent.childNodes.length > desired.length) {
-    parent.removeChild(parent.lastChild as Node)
+    const extra = parent.lastChild as Node
+    destroyTree(extra, ctx)
+    parent.removeChild(extra)
   }
 }
 
@@ -178,10 +216,15 @@ export function renderInto(parent: Node, node: UiNode, ctx: RenderContext): void
   }
 
   const next = patchTree(existing, node, ctx)
-  if (next !== existing) parent.replaceChild(next, existing)
+  if (next !== existing) {
+    destroyTree(existing, ctx)
+    parent.replaceChild(next, existing)
+  }
 
   while (parent.childNodes.length > 1) {
-    parent.removeChild(parent.lastChild as Node)
+    const extra = parent.lastChild as Node
+    destroyTree(extra, ctx)
+    parent.removeChild(extra)
   }
 }
 
