@@ -34,6 +34,24 @@ export function withUserMessage(state: Transcript, text: string): Transcript {
   return { ...state, messages: [...state.messages, { id: nextId(), role: 'user', text }] }
 }
 
+/**
+ * Build a transcript from stored turns, to view a past conversation.
+ *
+ * Viewing is not resuming: this replaces what is on screen, and the agent is still
+ * attached to its own current session.
+ */
+export function fromTurns(turns: { role: 'user' | 'assistant'; text: string }[]): Transcript {
+  return {
+    messages: turns.map((turn) => ({
+      id: nextId(),
+      role: turn.role === 'user' ? 'user' : 'agent',
+      text: turn.text,
+    })),
+    pendingPermission: [],
+    status: 'idle',
+  }
+}
+
 export function applyEvent(state: Transcript, event: UiEvent): Transcript {
   switch (event.type) {
     case 'turn.started':

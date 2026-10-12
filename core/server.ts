@@ -11,6 +11,7 @@ import { connectAcp, type AcpConnection } from './acp/client.ts'
 import { resolveBackend } from './backends/registry.ts'
 import { ensureComponentsDir, listComponents, readComponent } from './components.ts'
 import { ensureLayoutFile, readLayout } from './layout.ts'
+import { listSessions, readSession } from './sessions.ts'
 import { ensureThemeFile, readTheme } from './theme.ts'
 import { sampleSystem } from './system.ts'
 import { ensureRepo, history, revertLast, snapshot } from './versioning.ts'
@@ -45,6 +46,8 @@ export interface CoreOptions {
   configDir?: string
   /** How often to publish a machine sample. 0 disables it. */
   sampleIntervalMs?: number
+  /** Where the harness keeps its sessions. Read-only, always. */
+  sessionsRoot?: string
 }
 
 export interface Core {
@@ -63,6 +66,8 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
   const policy = options.policy ?? DENY_BY_DEFAULT
   const configDir = options.configDir ?? process.env.SBH_CONFIG_DIR ?? join(homedir(), '.config', 'sbh')
   const componentsDir = options.componentsDir ?? join(configDir, 'components')
+  const sessionsRoot =
+    options.sessionsRoot ?? process.env.SBH_SESSIONS_DIR ?? join(homedir(), '.pi', 'agent', 'sessions')
   await ensureComponentsDir(componentsDir)
   await ensureThemeFile(configDir)
   await ensureLayoutFile(configDir)
@@ -154,6 +159,29 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
       void readLayout(configDir).then((layout) => {
         res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
         res.end(JSON.stringify(layout))
+      })
+      return
+    }
+
+    if (req.method === 'GET' && url === '/sessions') {
+      void listSessions(sessionsRoot).then((sessions) => {
+        res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
+        // `path` stays in the core: the browser has no use for a local path.
+        res.end(JSON.stringify({ sessions: sessions.map(({ path: _path, ...rest }) => rest) }))
+      })
+      return
+    }
+
+    const sessionMatch = /^\/sessions\/([A-Za-z0-9_-]+)$/.exec(url)
+    if (req.method === 'GET' && sessionMatch) {
+      void readSession(sessionsRoot, sessionMatch[1] as string).then((detail) => {
+        if (!detail) {
+          res.writeHead(404, { 'access-control-allow-origin': '*' })
+          res.end()
+          return
+        }
+        res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
+        res.end(JSON.stringify(detail))
       })
       return
     }

@@ -17,7 +17,8 @@ import { renderMarkdown } from '../tree/markdown.ts'
 import { controlStyle, fieldStyle } from '../atoms/style.ts'
 
 const stream = (el: HTMLElement, node: UiNode): void => {
-  el.setAttribute('data-atom', 'stream')
+  // Note: no `data-atom` here. Each component sets its own; a shared helper that
+  // stamped one clobbered the transcript's and made it unaddressable.
   el.style.display = 'flex'
   el.style.flexDirection = 'column'
   el.style.gap = str(node.props?.gap, 'var(--sbh-space-sm)')
@@ -223,3 +224,74 @@ const makePicker = (name: string, key: 'harness' | 'model', action: string): voi
 
 makePicker('harnessPicker', 'harness', 'harness.change')
 makePicker('modelPicker', 'model', 'model.change')
+
+// --- sessions sidebar ------------------------------------------------------------
+
+registerComponent({
+  name: 'sessions',
+  create(node) {
+    const el = document.createElement('div')
+    el.setAttribute('data-atom', 'sessions')
+    el.style.display = 'flex'
+    el.style.flexDirection = 'column'
+    el.style.gap = 'var(--sbh-space-xs)'
+    el.style.overflowY = 'auto'
+    el.style.minHeight = '0'
+    // `flex: 0 0 <width>`, not `width`: a flex child with a growing sibling is
+    // free to shrink, which squeezed the sidebar to ~60px and ellipsised every
+    // title to uselessness.
+    el.style.flex = `0 0 ${str(node.props?.width, '240px')}`
+    el.setAttribute('data-width', str(node.props?.width, '240px'))
+    applyLayout(el, node)
+    return el
+  },
+  update(el, node, ctx) {
+    const host = el as HTMLElement
+    const width = str(node.props?.width, '240px')
+    if (host.dataset.width !== width) {
+      host.style.flex = `0 0 ${width}`
+      host.dataset.width = width
+    }
+    applyLayout(host, node)
+    host.replaceChildren()
+
+    const heading = document.createElement('div')
+    heading.textContent = 'Past chats'
+    heading.style.cssText =
+      'font-size:var(--sbh-font-size-sm);color:var(--sbh-color-text-muted);padding:var(--sbh-space-xs) 0'
+    host.appendChild(heading)
+
+    if (ctx.host.sessions.length === 0) {
+      const empty = document.createElement('div')
+      empty.textContent = 'none yet'
+      empty.style.cssText = 'font-size:var(--sbh-font-size-sm);color:var(--sbh-color-text-muted)'
+      host.appendChild(empty)
+      return
+    }
+
+    for (const session of ctx.host.sessions) {
+      const button = document.createElement('button')
+      button.dataset.session = session.id
+      button.textContent = session.title || '(untitled)'
+      button.title = `${session.cwd}\n${session.updatedAt}`
+      button.style.cssText = [
+        'display:block',
+        'width:100%',
+        'text-align:left',
+        'cursor:pointer',
+        'border:1px solid var(--sbh-color-border)',
+        'background:var(--sbh-color-surface)',
+        'color:var(--sbh-color-text)',
+        'border-radius:var(--sbh-radius-md)',
+        'padding:var(--sbh-space-xs) var(--sbh-space-sm)',
+        'font-family:var(--sbh-font-sans)',
+        'font-size:var(--sbh-font-size-sm)',
+        'white-space:nowrap',
+        'overflow:hidden',
+        'text-overflow:ellipsis',
+      ].join(';')
+      button.addEventListener('click', () => ctx.dispatch('session.open', { id: session.id }))
+      host.appendChild(button)
+    }
+  },
+})

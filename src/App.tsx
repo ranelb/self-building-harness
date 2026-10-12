@@ -8,11 +8,12 @@ import { connectStream, type Stream } from './ui/state/stream.ts'
 import {
   applyEvent,
   empty,
+  fromTurns,
   resolvePermission,
   withUserMessage,
   type Transcript,
 } from './ui/state/transcript.ts'
-import { getLive, renderInto, setLive, type HostState, type RenderContext, type UiNode } from './ui/tree/render.ts'
+import { getLive, renderInto, setLive, type HostState, type RenderContext, type SessionSummary, type UiNode } from './ui/tree/render.ts'
 import { DEFAULT_LAYOUT } from '../shared/layout.ts'
 
 const DEFAULT_CORE_URL = import.meta.env.VITE_CORE_URL ?? 'ws://127.0.0.1:8787/ws'
@@ -28,6 +29,7 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
   const [tokens, setTokens] = useState<Record<string, string>>({})
   const [layout, setLayout] = useState<UiNode>(DEFAULT_LAYOUT)
   const [data, setData] = useState<Record<string, unknown>>({})
+  const [sessions, setSessions] = useState<SessionSummary[]>([])
   const host = useRef<HTMLDivElement>(null)
   const stream = useRef<Stream | null>(null)
 
@@ -62,6 +64,18 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
       })
     }
 
+    const refreshSessions = () => {
+      if (!baseUrl) return
+      void fetch(`${baseUrl}/sessions`)
+        .then((response) => (response.ok ? response.json() : { sessions: [] }))
+        .then((body: { sessions?: SessionSummary[] }) => {
+          if (!cancelled) setSessions(body.sessions ?? [])
+        })
+        .catch(() => {
+          // A missing session store is not a failure state; the sidebar stays empty.
+        })
+    }
+
     connection.onEvent((event) => {
       if (event.type === 'usage') {
         // Context usage is state, not transcript.
@@ -87,6 +101,7 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
     refreshComponents()
     refreshTheme()
     refreshLayout()
+    refreshSessions()
 
     return () => {
       cancelled = true
@@ -103,6 +118,7 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
     notices: components?.failed.map((failure) => `${failure.name} (${failure.error})`) ?? [],
     harness: { value: 'pi', options: [{ value: 'pi', label: 'Pi' }] },
     model: { value: 'default', options: [{ value: 'default', label: 'Default' }] },
+    sessions,
     data,
   }
 
@@ -112,7 +128,7 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
     bind: (el: Node, node: UiNode) => setLive(el, node, context),
     latest: (el: Node) => getLive(el),
     dispatch(action, payload) {
-      const props = payload as { value?: unknown; requestId?: unknown } | undefined
+      const props = payload as { value?: unknown; requestId?: unknown; id?: unknown } | undefined
 
       switch (action) {
         case 'prompt.draft':
@@ -142,6 +158,21 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
             decision: action === 'permission.allow' ? 'allow' : 'deny',
           })
           setTranscript((previous) => resolvePermission(previous, requestId))
+          return
+        }
+
+        case 'session.open': {
+          const base = httpBaseFromWsUrl(coreUrl)
+          const id = String(props?.id ?? '')
+          if (!base || !id) return
+          // Viewing only. The agent keeps its own session; resuming one is a core
+          // capability that does not exist yet, and this says so rather than
+          // pretending otherwise.
+          void fetch(`${base}/sessions/${encodeURIComponent(id)}`)
+            .then((response) => (response.ok ? response.json() : null))
+            .then((detail: { turns?: { role: 'user' | 'assistant'; text: string }[] } | null) => {
+              if (detail?.turns) setTranscript(fromTurns(detail.turns))
+            })
           return
         }
 

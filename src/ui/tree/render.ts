@@ -14,7 +14,7 @@
  */
 import type { HostState, UiNode } from '../../../shared/ui.ts'
 
-export type { HostState, UiNode } from '../../../shared/ui.ts'
+export type { HostState, SessionSummary, UiNode } from '../../../shared/ui.ts'
 export interface RenderContext {
   /** Emit a named action for the host to handle. */
   dispatch(action: string, payload?: unknown): void

@@ -201,3 +201,18 @@ built. Read it before building any of those, and before claiming SBH can.
 Read it the same way for anything of the form "add a panel that shows X or lets the
 user Y" — the four recipes are the worked examples, and the skill doubles as the
 capability benchmark.
+
+## Sessions
+
+`GET /sessions` lists past conversations (newest first, with a title taken from the
+first thing the user actually typed — injected skill text is stripped). `GET
+/sessions/<id>` returns the turns. `ctx.host.sessions` carries the list; the
+`sessions` host component renders it and dispatches `session.open`.
+
+**Read-only, permanently.** The app never writes, renames or deletes a harness
+session file — `pi` and `pi-web` must keep working on the same files, and a second
+writer is how a store gets corrupted. `SBH_SESSIONS_DIR` overrides the root.
+
+**Viewing is not resuming.** Opening a session replaces what is on screen; the agent
+is still attached to its own session, so sending a message starts a new one. Resume
+needs a core capability that does not exist yet.

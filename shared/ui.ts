@@ -53,6 +53,14 @@ export interface PickOption {
  * dynamic is a component reading this. There is no expression language and no
  * bind syntax to learn.
  */
+export interface SessionSummary {
+  id: string
+  title: string
+  cwd: string
+  startedAt: string
+  updatedAt: string
+}
+
 export interface HostState {
   messages: HostMessage[]
   status: 'idle' | 'streaming' | 'error'
@@ -63,6 +71,8 @@ export interface HostState {
   notices: string[]
   harness: { value: string; options: PickOption[] }
   model: { value: string; options: PickOption[] }
+  /** Past conversations, newest first. Read-only — the app never writes them. */
+  sessions: SessionSummary[]
   /**
    * Keyed values published by the core — `usage` from the agent, `system` from the
    * machine. Components read this; new keys need no protocol change.

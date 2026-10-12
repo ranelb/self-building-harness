@@ -9,13 +9,20 @@
 import type { UiNode } from './ui.ts'
 
 export const DEFAULT_LAYOUT: UiNode = {
-  type: 'column',
-  props: { grow: true },
+  type: 'row',
+  props: { grow: true, align: 'stretch' },
   children: [
-    { type: 'notices' },
-    { type: 'row', children: [{ type: 'harnessPicker' }, { type: 'modelPicker' }] },
-    { type: 'transcript', props: { grow: true } },
-    { type: 'permission' },
-    { type: 'composer' },
+    { type: 'sessions', props: { width: '240px' } },
+    {
+      type: 'column',
+      props: { grow: true },
+      children: [
+        { type: 'notices' },
+        { type: 'row', children: [{ type: 'harnessPicker' }, { type: 'modelPicker' }] },
+        { type: 'transcript', props: { grow: true } },
+        { type: 'permission' },
+        { type: 'composer' },
+      ],
+    },
   ],
 }
