@@ -11,6 +11,7 @@
     "core": "node --experimental-strip-types core/index.ts"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "^1.8.0",
     "preact": "^10.29.8"
   },
   "devDependencies": {
