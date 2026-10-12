@@ -34,6 +34,7 @@ export interface ConnectOptions {
 interface Pending {
   resolve: (value: any) => void
   reject: (error: Error) => void
+  method: string
 }
 
 export function connectAcp(opts: ConnectOptions): AcpConnection {
@@ -63,7 +64,7 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
   const request = (method: string, params: unknown): Promise<any> =>
     new Promise((resolve, reject) => {
       const id = nextId++
-      pending.set(id, { resolve, reject })
+      pending.set(id, { resolve, reject, method })
       send({ jsonrpc: '2.0', id, method, params })
     })
 
@@ -87,7 +88,7 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
       const entry = pending.get(msg.id)
       pending.delete(msg.id)
       if (!entry) return
-      if (msg.error) entry.reject(new Error(msg.error.message ?? 'acp error'))
+      if (msg.error) entry.reject(new Error(`${entry.method}: ${msg.error.message ?? 'acp error'}`))
       else entry.resolve(msg)
       return
     }
@@ -135,11 +136,20 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
     pending.clear()
   })
 
+  // The handshake promise is *floating*: if it rejected without a handler, an
+  // agent that answers `initialize` with a JSON-RPC error would crash the whole
+  // core through an unhandled rejection. Found by running real pi-acp.
+  let handshakeError: Error | null = null
   const ready = (async () => {
     await request('initialize', { protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
-    const created = await request('session/new', { cwd: opts.cwd })
+    // `mcpServers` is required by NewSessionRequest alongside `cwd`, not optional.
+    // Omitting it is rejected with "Invalid params" by a real agent.
+    const created = await request('session/new', { cwd: opts.cwd, mcpServers: [] })
     sessionId = created?.result?.sessionId ?? null
-  })()
+  })().catch((err: Error) => {
+    handshakeError = err
+    emit({ type: 'error', message: err.message })
+  })
 
   return {
     onEvent(cb) {
@@ -147,12 +157,8 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
     },
 
     async prompt(text) {
-      try {
-        await ready
-      } catch (err) {
-        emit({ type: 'error', message: (err as Error).message })
-        return
-      }
+      await ready
+      if (handshakeError) return
       emit({ type: 'turn.started' })
       try {
         const res = await request('session/prompt', {

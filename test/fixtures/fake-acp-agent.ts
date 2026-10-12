@@ -145,9 +145,18 @@ async function serve(scenario: Scenario): Promise<void> {
         })
         return
 
-      case 'session/new':
+      case 'session/new': {
+        // Enforce the schema's required fields rather than accepting anything: a
+        // fixture that says yes to everything cannot catch client drift, and
+        // real agents answer "Invalid params".
+        const params = msg.params ?? {}
+        if (typeof params.cwd !== 'string' || !Array.isArray(params.mcpServers)) {
+          write({ jsonrpc: '2.0', id: msg.id, error: { code: -32602, message: 'Invalid params' } })
+          return
+        }
         write({ jsonrpc: '2.0', id: msg.id, result: { sessionId: SESSION_ID } })
         return
+      }
 
       case 'session/prompt':
         await runScenario(scenario, textOf(msg.params), sendRequest)
@@ -256,7 +265,7 @@ export function spawnFakeAgent(
       )
 
       await request('initialize', { protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
-      const created = await request('session/new', { cwd })
+      const created = await request('session/new', { cwd, mcpServers: [] })
 
       const turn = request('session/prompt', {
         sessionId: created?.result?.sessionId ?? SESSION_ID,
