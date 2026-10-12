@@ -19,7 +19,7 @@ describe('loadComponents', () => {
     const report = await loadComponents({
       baseUrl: 'http://core',
       fetchImpl: async () => jsonResponse({ components: ['alpha', 'beta'] }),
-      importImpl: async (url) => ({ component: fakeComponent(url.split('/').pop()!.replace('.js', '')) }),
+      importImpl: async (url) => ({ component: fakeComponent(url.split('?')[0]!.split('/').pop()!.replace('.js', '')) }),
     })
 
     expect(report.loaded.sort()).toEqual(['alpha', 'beta'])
@@ -83,12 +83,28 @@ describe('loadComponents', () => {
     expect(report).toEqual({ loaded: [], failed: [], removed: [] })
   })
 
+  it('appends a cache-buster so an edited module is re-imported', async () => {
+    // Without this the browser serves the cached module and an edit appears to do
+    // nothing — hot reload only worked for new files.
+    const urls: string[] = []
+    await loadComponents({
+      baseUrl: 'http://core',
+      revision: 'rev-1',
+      fetchImpl: async () => jsonResponse({ components: ['alpha'] }),
+      importImpl: async (url) => {
+        urls.push(url)
+        return { component: fakeComponent('alpha') }
+      },
+    })
+    expect(urls[0]).toBe('http://core/components/alpha.js?rev=rev-1')
+  })
+
   it('unregisters a component whose file has gone, and keeps a merely broken one', async () => {
     const opts = (names: string[], failing: string[]) => ({
       baseUrl: 'http://core',
       fetchImpl: async () => jsonResponse({ components: names }),
       importImpl: async (url: string) => {
-        const name = url.split('/').pop()!.replace('.js', '')
+        const name = url.split('?')[0]!.split('/').pop()!.replace('.js', '')
         if (failing.includes(name)) throw new Error('boom')
         return { component: fakeComponent(name) }
       },

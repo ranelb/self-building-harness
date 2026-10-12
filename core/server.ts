@@ -98,7 +98,9 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
   }
 
   const http = createServer((req, res) => {
-    const url = req.url ?? ''
+    // The client appends a cache-buster to module URLs, so the path must be read
+    // before the query.
+    const url = (req.url ?? '').split('?')[0] ?? ''
 
     if (req.method === 'GET' && url === '/health') {
       res.writeHead(200, { 'content-type': 'application/json' })

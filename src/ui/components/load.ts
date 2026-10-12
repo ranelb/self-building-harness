@@ -24,6 +24,15 @@ export interface LoadOptions {
   baseUrl: string
   fetchImpl?: typeof fetch
   importImpl?: (url: string) => Promise<unknown>
+  /**
+   * Cache-buster for module URLs.
+   *
+   * The browser caches ES modules by URL for the page's lifetime, ignoring
+   * `cache-control`. Re-importing the same URL therefore returns the *old* module,
+   * so editing an existing component appeared to do nothing — hot reload only ever
+   * worked for brand-new files.
+   */
+  revision?: string
 }
 
 /** The core serves HTTP and WebSocket on the same loopback port. */
@@ -55,6 +64,7 @@ export async function loadComponents(options: LoadOptions): Promise<LoadReport> 
     options.importImpl ?? ((url: string) => import(/* @vite-ignore */ url))
 
   const report: LoadReport = { loaded: [], failed: [], removed: [] }
+  const revision = options.revision ?? String(Date.now())
 
   let names: string[] = []
   try {
@@ -71,7 +81,9 @@ export async function loadComponents(options: LoadOptions): Promise<LoadReport> 
 
   for (const name of names) {
     try {
-      const module = (await doImport(`${options.baseUrl}/components/${name}.js`)) as {
+      const module = (await doImport(
+        `${options.baseUrl}/components/${name}.js?rev=${revision}`
+      )) as {
         component?: unknown
         default?: unknown
       }
