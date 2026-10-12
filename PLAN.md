@@ -764,3 +764,36 @@ Steps 1–3 done, all verified in Chromium with real files on disk and no page r
 Remaining: Tauri spawning the core (needs a real window), session list/resume, real
 backend switching, published docs, and the deferred items (virtualization, mobile,
 MCP Apps).
+
+## Interactivity: the missing API surface (planned 2026-10-12)
+
+The acceptance criteria, in ran's words: *"resize this"*, *"make this draggable"*,
+*"add a setting for this"*, *"build me a tiny idle game while waiting for responses"*.
+
+None of these are CSS. CSS styles the consequence of interaction (`:hover`,
+transitions, `resize:` handles); it has no events, no state and no drag. What enables
+them is that components are trusted code with real DOM access — but three pieces of
+supporting API are missing.
+
+| # | Addition | Unblocks | Size |
+|---|---|---|---|
+| 0 | **Capability probe** — drive all four scenarios in the browser, record how each fails today | replaces assertion with evidence before building | small |
+| 1 | **`destroy` lifecycle hook** — `create`/`update`/`destroy` | the idle game: a `setInterval`/`rAF` loop or window listener currently has nowhere to clean up, and reconciliation replaces elements routinely, so timers leak against detached nodes | small |
+| 2 | **Agent-authorable layout** — `~/.config/sbh/layout.json`, written once with the scaffold as the default, served by the core, hot-reloaded like `theme.json` | *"resize this"*, *"add a setting"*, *"add a panel"*. Today `scaffoldTree()` is hardcoded: the agent can write components but **cannot change what is in the tree or where it sits**, so there is nowhere to put anything. This is the addition that makes "the agent authors its own interface" literally true. | medium |
+| 3 | **Namespaced state store** — `ctx.state('panel')`, persisted through the core into the config dir | *"add a setting for this"*. Component-local state already survives reconciliation; shared state and persistence do not exist. | small |
+
+**Order: 0 → 1 → 2 → 3, then replay the four scenarios as the acceptance pass.**
+
+Rationale for the order, and for why not "test first": the four scenarios cannot be
+written as failing tests before the API exists — there is no way to express "add a
+setting" when no settings API exists, so a red suite would be theatre. What *is*
+worth doing first is the probe (#0): cheap, and this project's record is that
+rendering it found five bugs the 90-test suite did not. Then build the three. The
+scenarios are the verdict at the end, not a gate at the start.
+
+**The idle game is the hardest case and the best final acceptance test** — a loop, a
+`destroy`, state, and a placement in the agent-authored layout, all at once. If that
+works, the other three are already covered.
+
+Safety is already in place: a broken layout fails exactly like a broken component —
+named on screen, skipped, with **Revert last change** available.
