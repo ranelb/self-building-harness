@@ -836,3 +836,29 @@ earlier verification missed it because it only ever *added* files.
 
 Then replay the four asks as the acceptance pass, with the idle game as the hardest
 case.
+
+### #1 and #2 done (2026-10-12)
+
+**`destroy` hook** (`create`/`update`/`destroy`/`container`): `destroyTree` walks the
+subtree deepest-first, isolating a cleanup that throws. Proven with a real hot
+reload — a probe holding a rAF loop leaked one immortal loop per edit (2 ticking
+after one edit, measured); with `destroy` cancelling it, the same edit leaves 1.
+
+**Agent-authorable layout**: `~/.config/sbh/layout.json`, served at `GET /layout`,
+hot-reloaded, committed, revertable. `scaffoldTree` is deleted; the dynamic pieces
+became host components reading `ctx.host` — which is the binding model, and keeps
+the layout as plain static JSON with no expression language.
+
+Found while doing it:
+- **`update` was never called after `create`**, so a component that paints in
+  `update` — the obvious way — rendered blank on first mount. Mount is now
+  create + update.
+- the config-dir watcher swept a simultaneous layout+component write into one
+  commit; harmless, but it means commit subjects are indicative, not exact.
+
+Verified: wrote `banner.js` and placed it in the layout with the pickers moved
+below the composer; both landed on the live page with no reload.
+
+**#3 (state store) is still open and now less pressing** — `localStorage` covers the
+simple case; the store is for sharing state between components and making it
+agent-visible and revertable.
