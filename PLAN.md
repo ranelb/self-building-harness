@@ -23,6 +23,55 @@ Vitest · WebSocket over `127.0.0.1`.
 **Spec:** `~/.local/share/ryoku/rashin/specs/2026-10-12-meta-harness-design.md`
 (the vault is the single source of truth for the design; do not copy it here)
 
+## Status — M1 complete (2026-10-12)
+
+All 8 tasks done. **54 tests / 12 files**, `npx tsc -b` clean, `npm run build`
+→ 19.8 kB (7.8 kB gzip). Suite needs no network and no model.
+
+Verified against reality, not only the suite:
+
+- **Real `pi-acp`**: `initialize` + `session/new` clean, and one real model turn
+  reached `stop: end_turn` with zero errors.
+- **Real browser** (Chromium) against a live core: a typed prompt streamed back;
+  the permission card appeared, and clicking **Allow** resumed the turn.
+
+### Deviations from this plan
+
+1. The Vite template emits lowercase `app.tsx` + a demo page → replaced; would
+   have broken `./App` on a case-sensitive filesystem.
+2. Added `tsconfig.core.json`; the template type-checked **no** core/test file.
+3. The plan's Task 3 permission test was wrong (`sessionUpdate: 'tool_call'` is
+   not a permission request — different channels). Corrected.
+4. Hand-rolled the ACP client; the SDK is used for types only.
+5. Vitest defaults to `node`; frontend tests opt into happy-dom by docblock.
+6. Added a `select` atom (Task 6's list omitted it, Task 8 needed two).
+7. `scaffoldTree` takes `{ draft }` so a re-render does not lose the input.
+8. `shared/protocol.ts` added so the UI can speak the wire type without
+   importing `core/`.
+
+### Bugs the plan's own tests could not catch
+
+Every one of these passed the suite and was found by running the real thing:
+
+- the input lost everything after its first character (the tree rebuild replaced
+  the focused element) — found in the browser;
+- the fake agent was resolved from `process.cwd()`, so a core started elsewhere
+  reported `agent exited with code 1` — found in the browser;
+- `session/new` omitted `mcpServers`, which the schema **requires** — rejected by
+  real `pi-acp` as `Invalid params`; the fixture now enforces required fields;
+- the handshake promise was floating, so that error became an unhandled
+  rejection that killed the core process.
+
+### Known gaps
+
+- **Transcript virtualization (Review Focus 5) is still untested** — deliberately
+  deferred; a long transcript is not yet known to be responsive.
+- The renderer rebuilds the whole tree on every change; focus/caret is restored by
+  hand (`src/ui/tree/focus.ts`). A diffing renderer is M2 work.
+- `pi-acp` streams pi's startup banner (`pi v1.1.0`, `## Context`, `## Skills`) as
+  message chunks, so the transcript opens with it. Adapter behaviour, not ours.
+- Nothing from M2 exists: templates, hot reload, git backing, `CATALOG.md`, docs.
+
 ## Global Constraints
 
 - **Tauri v2** for the desktop shell. No Electron. Rust is used only for the
