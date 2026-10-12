@@ -690,3 +690,30 @@ interfaces depend on the real shapes M1 produces. Its scope, from the spec:
   oversight.
 - **Proportion:** this plan is roughly the length of its spec and contains no
   implementations, only signatures, test assertions and exact values.
+
+### Screenshot pass (2026-10-12, after M1)
+
+Driving the real UI and *looking at it* found three more defects that the 49-test
+suite and every DOM assertion had passed:
+
+- **the layout was inverted** — the transcript pane collapsed to zero height
+  (`#app > [data-sbh-root]` had auto height, so the tree's `grow` had nothing to
+  grow into), leaving the composer at the top over dead space. Caught by
+  measuring `scroll.getBoundingClientRect().height === 0`, then confirmed in a
+  screenshot.
+- **the markdown atom was a plain-text stub** while the scaffold emitted markdown,
+  so `**you:**` rendered with literal asterisks. Replaced with a subset renderer
+  (`src/ui/tree/markdown.ts`) that builds DOM nodes and never uses `innerHTML` —
+  the same trust model as the rest of the tree, with a test asserting `<script>`
+  and `onerror=` stay inert.
+- **fast typing dropped characters** — a keystroke landing while the tree rebuilt
+  was lost (`deete the production databasel` at 12 ms/char). The live DOM input
+  value now wins over a stale render, and `send` reads the DOM rather than
+  possibly-lagging React state. Verified exact at 5 ms/char.
+
+Suite is now **62 tests / 13 files**. The `row` atom was added (it is in the
+spec's v0 set and the composer needed it).
+
+The lesson, again: a DOM assertion checks that an element exists, not that the
+thing looks right. Four of the seven bugs found in this build were only visible by
+rendering it.
