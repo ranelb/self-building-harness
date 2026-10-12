@@ -10,6 +10,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 import { connectAcp, type AcpConnection } from './acp/client.ts'
 import { resolveBackend } from './backends/registry.ts'
 import { ensureComponentsDir, listComponents, readComponent } from './components.ts'
+import { ensureThemeFile, readTheme } from './theme.ts'
 import { DENY_BY_DEFAULT, respondToPermission, type PermissionPolicy } from './acp/permissions.ts'
 import type { UiEvent } from './events.ts'
 
@@ -36,6 +37,8 @@ export interface CoreOptions {
   policy?: PermissionPolicy
   /** Where agent-authored component modules live. */
   componentsDir?: string
+  /** Config root; theme.json and components/ live under it. */
+  configDir?: string
 }
 
 export interface Core {
@@ -52,9 +55,10 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
   const backend = options.backend ?? 'pi'
   const cwd = options.cwd ?? process.cwd()
   const policy = options.policy ?? DENY_BY_DEFAULT
-  const componentsDir =
-    options.componentsDir ?? process.env.SBH_COMPONENTS_DIR ?? join(homedir(), '.config', 'sbh', 'components')
+  const configDir = options.configDir ?? process.env.SBH_CONFIG_DIR ?? join(homedir(), '.config', 'sbh')
+  const componentsDir = options.componentsDir ?? join(configDir, 'components')
   await ensureComponentsDir(componentsDir)
+  await ensureThemeFile(configDir)
 
   const clients = new Set<WebSocket>()
   let conn: AcpConnection | null = null
@@ -94,6 +98,14 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     if (req.method === 'GET' && url === '/health') {
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify({ ok: true }))
+      return
+    }
+
+    if (req.method === 'GET' && url === '/theme') {
+      void readTheme(configDir).then((theme) => {
+        res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
+        res.end(JSON.stringify(theme))
+      })
       return
     }
 

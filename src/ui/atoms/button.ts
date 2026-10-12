@@ -1,10 +1,12 @@
 import { registerComponent, getLive, setLive, str } from '../tree/render.ts'
+import { controlStyle } from './style.ts'
 
 registerComponent({
   name: 'button',
   create(node, ctx) {
     const el = document.createElement('button')
     el.setAttribute('data-atom', 'button')
+    controlStyle(el)
     el.textContent = str(node.props?.label, 'button')
     setLive(el, node, ctx)
     // Installed once; reads the latest node so an action never dispatches with

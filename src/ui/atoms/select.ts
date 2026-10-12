@@ -1,4 +1,5 @@
 import { registerComponent, getLive, setLive, str, type UiNode } from '../tree/render.ts'
+import { controlStyle } from './style.ts'
 
 const OPTIONS = Symbol.for('sbh.select.options')
 
@@ -42,6 +43,7 @@ registerComponent({
   create(node, ctx) {
     const el = document.createElement('select')
     el.setAttribute('data-atom', 'select')
+    controlStyle(el)
     paintOptions(el, node)
     setLive(el, node, ctx)
     el.addEventListener('change', () => {

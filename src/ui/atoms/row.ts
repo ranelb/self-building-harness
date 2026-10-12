@@ -8,7 +8,7 @@ registerComponent({
     el.setAttribute('data-atom', 'row')
     el.style.display = 'flex'
     el.style.flexDirection = 'row'
-    el.style.gap = str(node.props?.gap, '0.5rem')
+    el.style.gap = str(node.props?.gap, 'var(--sbh-space-sm)')
     el.style.alignItems = str(node.props?.align, 'center')
     applyLayout(el, node)
     setLive(el, node, ctx)
@@ -17,7 +17,7 @@ registerComponent({
   update(el, node, ctx) {
     setLive(el, node, ctx)
     const element = el as HTMLElement
-    element.style.gap = str(node.props?.gap, '0.5rem')
+    element.style.gap = str(node.props?.gap, 'var(--sbh-space-sm)')
     element.style.alignItems = str(node.props?.align, 'center')
     applyLayout(element, node)
   },

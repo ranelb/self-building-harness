@@ -1,6 +1,7 @@
+/* Fallbacks are inlined so the app is still legible before the theme loads —
+   the real values arrive as --sbh-* variables from the theme file. */
 :root {
   color-scheme: dark;
-  font-family: system-ui, sans-serif;
 }
 
 html,
@@ -13,7 +14,7 @@ body,
 #app {
   display: flex;
   flex-direction: column;
-  padding: 12px;
+  padding: var(--sbh-space-md, 0.75rem);
   box-sizing: border-box;
 }
 
@@ -27,8 +28,10 @@ body,
 }
 
 body {
-  background: #16161a;
-  color: #e6e6e6;
+  background: var(--sbh-color-background, #16161a);
+  color: var(--sbh-color-text, #e6e6e6);
+  font-family: var(--sbh-font-sans, system-ui, sans-serif);
+  font-size: var(--sbh-font-size, 0.95rem);
 }
 
 .sbh-markdown > :first-child {
@@ -42,19 +45,26 @@ body {
 .sbh-markdown p,
 .sbh-markdown ul,
 .sbh-markdown pre {
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--sbh-space-sm, 0.5rem);
 }
 
 .sbh-markdown pre {
-  background: #0f0f12;
-  padding: 0.5rem;
-  border-radius: 4px;
+  background: var(--sbh-color-surface, #1e1e24);
+  border: 1px solid var(--sbh-color-border, #33333d);
+  border-radius: var(--sbh-radius-md, 6px);
+  padding: var(--sbh-space-sm, 0.5rem);
   overflow-x: auto;
+}
+
+.sbh-markdown code {
+  font-family: var(--sbh-font-mono, monospace);
+  font-size: var(--sbh-font-size-sm, 0.8rem);
 }
 
 .sbh-markdown h1,
 .sbh-markdown h2,
 .sbh-markdown h3 {
-  margin: 0.5rem 0 0.4rem;
-  font-size: 1.05rem;
+  margin: var(--sbh-space-sm, 0.5rem) 0 var(--sbh-space-xs, 0.25rem);
+  font-size: var(--sbh-font-size-lg, 1.1rem);
+  font-weight: var(--sbh-font-weight-bold, 600);
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import './ui/atoms/index.ts'
 import { httpBaseFromWsUrl, loadComponents, type LoadReport } from './ui/components/load.ts'
+import { applyTheme, loadTheme } from './ui/theme/apply.ts'
 import { scaffoldTree } from './ui/scaffold.ts'
 import { connectStream, type Stream } from './ui/state/stream.ts'
 import {
@@ -22,6 +23,7 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
   const [transcript, setTranscript] = useState<Transcript>(empty)
   const [draft, setDraft] = useState('')
   const [components, setComponents] = useState<LoadReport | null>(null)
+  const [tokens, setTokens] = useState<Record<string, string>>({})
   const host = useRef<HTMLDivElement>(null)
   const stream = useRef<Stream | null>(null)
 
@@ -47,8 +49,23 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
     }
   }, [coreUrl])
 
+  // Theme variables live on the document root, so everything — including the
+  // body background — follows a theme change without a re-render.
+  useEffect(() => {
+    const baseUrl = httpBaseFromWsUrl(coreUrl)
+    if (!baseUrl) return
+    let cancelled = false
+    void loadTheme(baseUrl).then((theme) => {
+      if (cancelled) return
+      setTokens(applyTheme(document.documentElement, theme))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [coreUrl])
+
   const context: RenderContext = {
-    tokens: {},
+    tokens,
     bind: (el: Node, node: UiNode) => setLive(el, node, context),
     latest: (el: Node) => getLive(el),
     dispatch(action, payload) {

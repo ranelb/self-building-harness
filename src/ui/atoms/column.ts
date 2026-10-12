@@ -5,7 +5,7 @@ export function createColumn(node: UiNode, _ctx: RenderContext): Node {
   el.setAttribute('data-atom', 'column')
   el.style.display = 'flex'
   el.style.flexDirection = 'column'
-  el.style.gap = str(node.props?.gap, '0.5rem')
+  el.style.gap = str(node.props?.gap, 'var(--sbh-space-sm)')
   applyLayout(el, node)
   return el
 }
@@ -17,7 +17,7 @@ registerComponent({
   update(el, node, ctx) {
     setLive(el, node, ctx)
     const element = el as HTMLElement
-    element.style.gap = str(node.props?.gap, '0.5rem')
+    element.style.gap = str(node.props?.gap, 'var(--sbh-space-sm)')
     applyLayout(element, node)
   },
 })

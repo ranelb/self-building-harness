@@ -1,10 +1,12 @@
 import { applyLayout, registerComponent, getLive, setLive, str } from '../tree/render.ts'
+import { fieldStyle } from './style.ts'
 
 registerComponent({
   name: 'input',
   create(node, ctx) {
     const el = document.createElement('input')
     el.setAttribute('data-atom', 'input')
+    fieldStyle(el)
     el.value = str(node.props?.value)
     if (node.props?.placeholder !== undefined) el.placeholder = str(node.props.placeholder)
     applyLayout(el, node)
