@@ -187,3 +187,15 @@ in `update` alone and never worry about the first render. Declare `destroy` if y
 hold a timer, a `rAF` loop or a `window`/`document` listener — reconciliation
 replaces elements routinely (hot reload, a layout edit) and an unclean loop runs
 against a detached node forever.
+
+## Optional UI to build
+
+`.agents/skills/optional-basics/SKILL.md` — recipes for a settings panel, a context
+meter, light/dark mode and a sessions sidebar, each with an acceptance criterion and
+the host capability it needs. **Two of the four are blocked**: the context meter has
+no usage data reaching the UI, and the sessions sidebar has no session API in the
+core. Read it before building any of those, and before claiming SBH can.
+
+Read it the same way for anything of the form "add a panel that shows X or lets the
+user Y" — the four recipes are the worked examples, and the skill doubles as the
+capability benchmark.
