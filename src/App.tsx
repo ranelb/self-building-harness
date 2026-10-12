@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import './ui/atoms/index.ts'
+import './ui/host/components.ts'
 import { httpBaseFromWsUrl, loadComponents, type LoadReport } from './ui/components/load.ts'
+import { loadLayout } from './ui/layout/load.ts'
 import { applyTheme, loadTheme } from './ui/theme/apply.ts'
-import { scaffoldTree } from './ui/scaffold.ts'
 import { connectStream, type Stream } from './ui/state/stream.ts'
 import {
   applyEvent,
@@ -11,7 +12,8 @@ import {
   withUserMessage,
   type Transcript,
 } from './ui/state/transcript.ts'
-import { getLive, renderInto, setLive, type RenderContext, type UiNode } from './ui/tree/render.ts'
+import { getLive, renderInto, setLive, type HostState, type RenderContext, type UiNode } from './ui/tree/render.ts'
+import { DEFAULT_LAYOUT } from '../shared/layout.ts'
 
 const DEFAULT_CORE_URL = import.meta.env.VITE_CORE_URL ?? 'ws://127.0.0.1:8787/ws'
 
@@ -24,6 +26,7 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
   const [draft, setDraft] = useState('')
   const [components, setComponents] = useState<LoadReport | null>(null)
   const [tokens, setTokens] = useState<Record<string, string>>({})
+  const [layout, setLayout] = useState<UiNode>(DEFAULT_LAYOUT)
   const host = useRef<HTMLDivElement>(null)
   const stream = useRef<Stream | null>(null)
 
@@ -51,11 +54,23 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
       })
     }
 
+    const refreshLayout = () => {
+      if (!baseUrl) return
+      void loadLayout(baseUrl).then((next) => {
+        if (!cancelled) setLayout(next)
+      })
+    }
+
     connection.onEvent((event) => setTranscript((previous) => applyEvent(previous, event)))
-    connection.onInvalidate((what) => (what === 'components' ? refreshComponents() : refreshTheme()))
+    connection.onInvalidate((what) => {
+      if (what === 'components') refreshComponents()
+      else if (what === 'theme') refreshTheme()
+      else refreshLayout()
+    })
 
     refreshComponents()
     refreshTheme()
+    refreshLayout()
 
     return () => {
       cancelled = true
@@ -63,8 +78,20 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
     }
   }, [coreUrl])
 
+  const hostState: HostState = {
+    messages: transcript.messages,
+    status: transcript.status,
+    error: transcript.error,
+    draft,
+    pendingPermission: transcript.pendingPermission,
+    notices: components?.failed.map((failure) => `${failure.name} (${failure.error})`) ?? [],
+    harness: { value: 'pi', options: [{ value: 'pi', label: 'Pi' }] },
+    model: { value: 'default', options: [{ value: 'default', label: 'Default' }] },
+  }
+
   const context: RenderContext = {
     tokens,
+    host: hostState,
     bind: (el: Node, node: UiNode) => setLive(el, node, context),
     latest: (el: Node) => getLive(el),
     dispatch(action, payload) {
@@ -118,12 +145,11 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
 
   // Reconcile rather than rebuild. Component instances (and therefore focus,
   // caret, scroll position and any future canvas state) survive an update; the
-  // tree stays the single source of truth for *what* is rendered.
+  // layout stays the single source of truth for *what* is rendered.
   useEffect(() => {
     const element = host.current
     if (!element) return
-    const notices = components?.failed.map((failure) => `${failure.name} (${failure.error})`) ?? []
-    renderInto(element, scaffoldTree(transcript, { draft, notices }), context)
+    renderInto(element, layout, context)
   })
 
   return <div data-sbh-root ref={host} />

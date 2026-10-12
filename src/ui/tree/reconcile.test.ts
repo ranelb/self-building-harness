@@ -6,6 +6,15 @@ import { renderInto, registerComponent, type RenderContext, type UiNode } from '
 const calls: unknown[] = []
 const ctx: RenderContext = {
   tokens: {},
+  host: {
+    messages: [],
+    status: 'idle',
+    draft: '',
+    pendingPermission: [],
+    notices: [],
+    harness: { value: 'pi', options: [] },
+    model: { value: 'default', options: [] },
+  },
   bind: () => {},
   latest: () => undefined,
   dispatch: (action, payload) => calls.push(payload === undefined ? action : { action, payload }),

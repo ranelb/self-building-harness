@@ -23,4 +23,4 @@ export type ClientToCore =
 export type CoreToClient =
   | { type: 'event'; event: UiEvent }
   /** A watched file changed; the client should re-fetch. Hot reload. */
-  | { type: 'invalidate'; what: 'components' | 'theme' }
+  | { type: 'invalidate'; what: 'components' | 'theme' | 'layout' }

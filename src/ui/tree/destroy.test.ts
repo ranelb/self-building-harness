@@ -5,6 +5,15 @@ import { registerComponent, renderInto, type RenderContext, type UiNode } from '
 
 const ctx: RenderContext = {
   tokens: {},
+  host: {
+    messages: [],
+    status: 'idle',
+    draft: '',
+    pendingPermission: [],
+    notices: [],
+    harness: { value: 'pi', options: [] },
+    model: { value: 'default', options: [] },
+  },
   bind: () => {},
   latest: () => undefined,
   dispatch: () => {},

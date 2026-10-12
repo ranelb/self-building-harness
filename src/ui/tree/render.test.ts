@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest'
 import '../atoms/index.ts'
-import { registerComponent, registeredComponents, renderTree, type RenderContext } from './render.ts'
+import { registerComponent, registeredComponents, renderTree, str, type RenderContext } from './render.ts'
 
 // Captured before any test registers its own throwaway component.
 const BUILT_INS = registeredComponents()
@@ -9,6 +9,15 @@ const BUILT_INS = registeredComponents()
 const calls: unknown[] = []
 const ctx: RenderContext = {
   tokens: {},
+  host: {
+    messages: [],
+    status: 'idle',
+    draft: '',
+    pendingPermission: [],
+    notices: [],
+    harness: { value: 'pi', options: [] },
+    model: { value: 'default', options: [] },
+  },
   bind: () => {},
   latest: () => undefined,
   dispatch: (action, payload) => calls.push(payload === undefined ? action : { action, payload }),
@@ -96,5 +105,19 @@ describe('renderTree', () => {
       'select',
       'text',
     ])
+  })
+
+  it('runs update after create, so one painting path is enough', () => {
+    // Mount is create + update. A component that fills its element only in
+    // `update` must not render blank on first mount.
+    registerComponent({
+      name: 'paints-in-update',
+      create: () => document.createElement('div'),
+      update: (el, node) => {
+        el.textContent = str(node.props?.value)
+      },
+    })
+    const el = renderTree({ type: 'paints-in-update', props: { value: 'painted' } }, ctx)
+    expect(el.textContent).toBe('painted')
   })
 })

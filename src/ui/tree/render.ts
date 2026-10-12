@@ -12,17 +12,16 @@
  *   - prose that arrives from a model goes through node-building (see
  *     `markdown.ts`), never `innerHTML`.
  */
+import type { HostState, UiNode } from '../../../shared/ui.ts'
 
-export interface UiNode {
-  type: string
-  props?: Record<string, unknown>
-  children?: UiNode[]
-}
+export type { HostState, UiNode } from '../../../shared/ui.ts'
 export interface RenderContext {
   /** Emit a named action for the host to handle. */
   dispatch(action: string, payload?: unknown): void
   /** Theme tokens available to components. */
   tokens: Record<string, string>
+  /** Live session state — how a static layout becomes dynamic. */
+  host: HostState
   /**
    * Record the node this element currently represents.
    *
@@ -121,6 +120,16 @@ function mount(node: UiNode, ctx: RenderContext): Node {
   ;(el as Tagged)[TYPE] = node.type
   ;(el as Tagged)[COMPONENT] = component
   setLive(el, node, ctx)
+
+  // Mount is create *plus* update, so a component needs only one painting path.
+  // Without this, anything that fills its element in `update` renders blank until
+  // something else happens to trigger an update — an easy trap to fall into.
+  try {
+    component.update?.(el, node, ctx)
+  } catch (err) {
+    return placeholder('data-error', node.type, `component failed: ${node.type}: ${(err as Error).message}`)
+  }
+
   if (component.container) reconcileChildren(el, node, ctx)
   return el
 }

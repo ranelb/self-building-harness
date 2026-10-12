@@ -155,3 +155,35 @@ which runs `git revert` so the undo is itself a commit and can be undone in turn
 
 `GET /history` lists commits; `POST /revert` undoes the last one. Inspect it by hand
 with `git -C ~/.config/sbh log --oneline`.
+
+## The layout
+
+`~/.config/sbh/layout.json` is what is on screen, as a tree an agent can rewrite.
+Written once with the default; hot-reloaded like the theme. Add a panel, move the
+pickers, delete the transcript — edit the file and watch it happen.
+
+**There is no binding language.** The layout is plain static structure; anything
+dynamic is a *host component* reading `ctx.host`:
+
+| component | reads |
+|---|---|
+| `transcript` | `ctx.host.messages`, `status`, `error` |
+| `composer` | `ctx.host.draft`; dispatches `prompt.draft` / `prompt.send` |
+| `permission` | `ctx.host.pendingPermission`; dispatches `permission.allow` / `.deny` |
+| `notices` | `ctx.host.notices`; dispatches `ui.revert` |
+| `harnessPicker`, `modelPicker` | `ctx.host.harness` / `.model` |
+
+They are ordinary components in the same registry, so an agent can restyle or
+override any of them — that is how the whole interface becomes agent-authored
+rather than agent-styled.
+
+A layout that is not a tree falls back to the default, so a bad edit cannot leave
+a blank window.
+
+## Component lifecycle
+
+`create` → `update` → `destroy`. **Mount runs `create` and then `update`**, so paint
+in `update` alone and never worry about the first render. Declare `destroy` if you
+hold a timer, a `rAF` loop or a `window`/`document` listener — reconciliation
+replaces elements routinely (hot reload, a layout edit) and an unclean loop runs
+against a detached node forever.

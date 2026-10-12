@@ -10,7 +10,7 @@ export interface Stream {
   send(message: ClientToCore): void
   onEvent(cb: (event: UiEvent) => void): void
   /** Fired when the core reports a watched file changed (hot reload). */
-  onInvalidate(cb: (what: 'components' | 'theme') => void): void
+  onInvalidate(cb: (what: 'components' | 'theme' | 'layout') => void): void
   close(): void
 }
 
@@ -18,7 +18,7 @@ const MAX_BACKOFF_MS = 10_000
 
 export function connectStream(url: string): Stream {
   const listeners: ((event: UiEvent) => void)[] = []
-  const invalidators: ((what: 'components' | 'theme') => void)[] = []
+  const invalidators: ((what: 'components' | 'theme' | 'layout') => void)[] = []
   const queue: string[] = []
   let socket: WebSocket | null = null
   let closed = false
@@ -48,7 +48,7 @@ export function connectStream(url: string): Stream {
       if (parsed?.type === 'event' && parsed.event) {
         for (const listener of listeners) listener(parsed.event as UiEvent)
       } else if (parsed?.type === 'invalidate' && typeof parsed.what === 'string') {
-        for (const listener of invalidators) listener(parsed.what as 'components' | 'theme')
+        for (const listener of invalidators) listener(parsed.what as 'components' | 'theme' | 'layout')
       }
     }
 

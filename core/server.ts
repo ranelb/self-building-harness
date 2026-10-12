@@ -10,6 +10,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 import { connectAcp, type AcpConnection } from './acp/client.ts'
 import { resolveBackend } from './backends/registry.ts'
 import { ensureComponentsDir, listComponents, readComponent } from './components.ts'
+import { ensureLayoutFile, readLayout } from './layout.ts'
 import { ensureThemeFile, readTheme } from './theme.ts'
 import { ensureRepo, history, revertLast, snapshot } from './versioning.ts'
 import { watchPaths } from './watch.ts'
@@ -61,6 +62,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
   const componentsDir = options.componentsDir ?? join(configDir, 'components')
   await ensureComponentsDir(componentsDir)
   await ensureThemeFile(configDir)
+  await ensureLayoutFile(configDir)
   await ensureRepo(configDir)
 
   const clients = new Set<WebSocket>()
@@ -145,6 +147,14 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
       return
     }
 
+    if (req.method === 'GET' && url === '/layout') {
+      void readLayout(configDir).then((layout) => {
+        res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
+        res.end(JSON.stringify(layout))
+      })
+      return
+    }
+
     if (req.method === 'GET' && url === '/history') {
       void history(configDir).then((commits) => {
         res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
@@ -217,6 +227,10 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     if (changed === 'theme.json' || changed === configDir) {
       void snapshot(configDir, 'sbh: theme changed').then(() =>
         sendToAll({ type: 'invalidate', what: 'theme' })
+      )
+    } else if (changed === 'layout.json') {
+      void snapshot(configDir, 'sbh: layout changed').then(() =>
+        sendToAll({ type: 'invalidate', what: 'layout' })
       )
     }
   })
