@@ -70,11 +70,31 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
 
   // Re-render the tree whenever state changes. The tree is data, so "render" is
   // just replacing children; there is no second source of truth in the DOM.
+  //
+  // Rebuilding the tree replaces the focused input, which would swallow the rest
+  // of a typed word, so focus and caret are restored across the rebuild. A real
+  // diffing renderer is M2 work; this is the honest M1 cost of rebuilding.
   useEffect(() => {
     const element = host.current
     if (!element) return
+
+    const active = document.activeElement as HTMLInputElement | null
+    const restore =
+      active && active.dataset.atom === 'input'
+        ? { caret: active.selectionStart ?? active.value.length }
+        : null
+
     element.replaceChildren()
     element.appendChild(renderTree(scaffoldTree(transcript, { draft }), context))
+
+    if (restore) {
+      const next = element.querySelector<HTMLInputElement>('input[data-atom="input"]')
+      if (next) {
+        next.focus()
+        const position = Math.min(restore.caret, next.value.length)
+        next.setSelectionRange(position, position)
+      }
+    }
   })
 
   return <div data-sbh-root ref={host} />

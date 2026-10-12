@@ -12,12 +12,15 @@ import { DENY_BY_DEFAULT, respondToPermission, type PermissionPolicy } from './a
 import type { UiEvent } from './events.ts'
 
 /**
- * The scripted fixture (test seam), resolved from the repo root.
+ * The scripted fixture (test seam).
  *
- * Not derived from `import.meta.url`: under Vitest that URL is not `file:`, so
- * `fileURLToPath` throws before a single test runs.
+ * Resolved from the package root, not `process.cwd()`: the core is expected to
+ * run from anywhere, and a wrong cwd silently turned into "agent exited with
+ * code 1" during the browser smoke test. `import.meta.dirname` is unavailable
+ * under Vitest, where cwd is already the package root.
  */
-const FIXTURE = resolve(process.cwd(), 'test/fixtures/fake-acp-agent.ts')
+const HERE = (import.meta as ImportMeta & { dirname?: string }).dirname
+const FIXTURE = resolve(HERE ? resolve(HERE, '..') : process.cwd(), 'test/fixtures/fake-acp-agent.ts')
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1'])
 
