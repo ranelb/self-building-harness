@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { SCENARIOS, spawnFakeAgent } from './fake-acp-agent'
+import { SCENARIOS, spawnFakeAgent } from './fake-acp-agent.ts'
 
 describe('fake ACP agent', () => {
   it('advertises every scenario this plan relies on', () => {
