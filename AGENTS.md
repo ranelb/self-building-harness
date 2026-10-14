@@ -1,7 +1,11 @@
 # SBH — agent instructions
 
+**Start with `HANDOFF.md`** — state, what is verified versus assumed, what is left,
+and the traps. This file is the contract you work under; `PLAN.md` holds the plan,
+status and decision records.
+
 Self-Building Harness: a barebones harness host whose interface is a declarative
-tree of host atoms, driven by agent backends over ACP. The agent authors the UI;
+tree of components, driven by agent backends over ACP. The agent authors the UI;
 the host owns the plumbing and the trust boundary.
 
 **The design is settled and lives in the vault:**
