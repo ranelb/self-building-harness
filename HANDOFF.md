@@ -14,8 +14,8 @@ declarative tree the agent writes as files. "Self-building harness."
 
 ## State
 
-41 commits · **134 tests / 22 files** · `tsc -b` clean · `git status` clean.
-`core`+`shared` ~1.6k · `src` ~1.5k lines of source.
+47 commits · **149 tests / 23 files** · `tsc -b` clean · `git status` clean.
+`core`+`shared` ~1.8k · `src` ~1.6k lines of source. A `.deb` builds and runs.
 
 ```
 core/      the process: ACP, permissions, WS server, theme/layout/components,
@@ -30,9 +30,11 @@ test/      scripted fake ACP agent + integration
 ## Running it
 
 ```bash
-npm test          # 134 tests, no network, no model, ~1s
+npm test          # 149 tests, no network, no model, ~1s
 npm run core      # the core, on ws://127.0.0.1:<SBH_PORT>/ws
 npx tauri dev     # the window — spawns its own core; first cargo build ~45s
+npm run build:core  # compile the core to a standalone binary (bun)
+npx tauri build --bundles deb   # a .deb with the core bundled in
 ```
 
 Useful env: `SBH_BACKEND` (`pi`, `goose`, or `fake:happy|permission|usage|unknown-update|
@@ -57,46 +59,45 @@ natively) handshakes and completes a real turn through the core — `turn.starte
 `usage`/`thought`/`chunk`, `turn.finished end_turn`, reply intact. This makes the
 central claim n=2.
 
-**Never verified:** anything *shipped*. Development works, but there is no
-sidecar bundling, no port handshake for a packaged build, and nothing has been
-packaged. The window runs against the repo's `core/index.ts` by path.
+**Never verified:** an *installed* app. A `.deb` builds and the release binary was
+run from the tree against its bundled core; nothing has been installed
+system-wide, and there is no rpm/AppImage pass or an update story.
 
 ## What is left
 
 ### It is not an app yet
-- ~~Tauri must spawn the core~~ — **done (development).** The shell spawns the core
-  on a free port, reads the port off its stdout, injects the URL into the webview,
-  and stops the core on exit. What is left is **packaging**: today it resolves
-  `core/index.ts` from the repo (`CARGO_MANIFEST_DIR/..`, or `SBH_ROOT`); a bundled
-  build ships the core as a sidecar resource instead. See `AGENTS.md` for the run
-  recipe.
-- ~~Open the window~~ — **done.** Verified on this Wayland session: the window
-  opens, the webview connects to the spawned core over loopback, and a streamed
-  turn renders. WebKitGTK found a layout bug Chromium hid (see the trap below).
-- ~~No origin check~~ — **done.** Exact-match allowlist (Vite dev + Tauri origins,
-  extended by `SBH_ALLOWED_ORIGINS`), enforced on every route and the WebSocket
-  upgrade; a missing `Origin` is still admitted for non-browser clients.
+- ~~Tauri must spawn the core~~ — **done.** Development spawns Node + the repo
+  script; a packaged build spawns the bundled binary. Both verified.
+- ~~Open the window~~ — **done.** Verified on this Wayland session.
+- ~~Origin check~~ — **done.** Exact-match allowlist on every route and the WS.
+- ~~Packaging~~ — **done, mostly.** `npm run build:core` compiles the core to a
+  standalone binary (`bun build --compile`, no Node on the target), shipped at
+  `binaries/sbh-core` and resolved from the resource dir. `npx tauri build
+  --bundles deb` produces a 38 MiB `SBH_0.1.0_amd64.deb`. Left: rpm/AppImage,
+  installing it system-wide, and an update story.
 
-### The thesis is unproven
-- ~~A second backend~~ — **done, with two gaps.** `goose` is in the registry and a
-  real turn works end to end. What it did *not* widen:
-  - the **permission gate**: goose (1.54), even in `approve` mode, never sent
-    `session/request_permission`, so that path is still tested only by pi-acp and
-    the fake fixture;
-  - **sessions**: the sidebar reads pi's JSON files, and goose keeps its sessions
-    in `~/.local/share/goose/sessions/sessions.db` (SQLite). Under
-    `SBH_BACKEND=goose` the list is therefore pi's, not goose's. The neutral fix is
-    ACP `session/list` (goose advertises it); reading a second store is the
-    un-neutral one.
-- **Resume a session.** Viewing works; continuing a past chat does not. goose
-  advertises `loadSession: true` (pi-acp did not), so it is the better prototype
-  target for the `session/load` route.
+### The thesis is proven enough
+- **A second backend** — `goose` works end to end, including its own session
+  list, model config option and resume. Still n=2; a third is untested.
+  - goose (1.54), even in `approve` mode, never sends
+    `session/request_permission`, so the permission gate is still only tested by
+    pi-acp and the fake fixture.
+- ~~Resume a session~~ — **done.** `session/load` replays the conversation as
+  events; `session/list` (the agent's own store, now the sidebar source) supplies
+  the ids. Works for pi and goose; verified in the browser.
+- ~~Real pickers~~ — **done.** The backend registry and the session's
+  `configOptions` feed the pickers over the state channel; switching reconnects.
+- ~~Transcript virtualization~~ — **done, as count-windowing.** Only the last 80
+  messages are in the DOM; older ones load a page at a time. Not position
+  virtualization (markdown heights are unknowable before layout), so the
+  guarantee is a bounded DOM, not a measured row.
 
 ### Daily-driver quality
-- **The harness/model pickers are decorative** — they dispatch into the void with
-  single-entry hardcoded options. Real switching means reconnecting the ACP session.
-- **Transcript virtualization** — flagged in the first review, still untested. 260
-  bubbles render; 10,000 is unknown.
+- **Model picker depends on a session.** The list only arrives with a session, so
+  the core opens one on client connect; under goose that creates an empty "New
+  Chat" row each run.
+- **Transcript windowing is bounded, not measured** — a very tall single message
+  still costs its own height, and there is no search/jump-to-message.
 - **Settings store.** `localStorage` works; it is not shared between components, not
   agent-visible, and not covered by revert.
 
@@ -114,13 +115,13 @@ packaged. The window runs against the repo's `core/index.ts` by path.
   to Ryoku by itself; nobody has tried.
 
 ### Deliberately deferred
-Mobile/PWA client · packaging and an install story · the repository split
-(**evaluated: don't**, until a second real client exists).
+Mobile/PWA client · rpm/AppImage packaging and an install/update story · the
+repository split (**evaluated: don't**, until a second real client exists).
 
 ## Open decisions
 
-- **Resume mechanism**: `session/load` over ACP, or the harness's CLI resume flag.
-  Test which the adapter supports before designing around it.
+- ~~**Resume mechanism**~~ — **decided: ACP `session/load`.** Both pi-acp and goose
+  support it, and `session/list` gives the ids, so nothing harness-specific.
 - **Capability manifest shape**: global flag vs per-capability list. The evaluation
   argues for the list; nothing is built.
 - **Root-gated policy**: a root-owned file outside any user-writable directory as the
@@ -130,7 +131,7 @@ Mobile/PWA client · packaging and an install story · the repository split
 
 Each of these cost real time. They are in `PLAN.md` in more detail.
 
-- **Nine bugs were found by running the thing; the 134-test suite found none of
+- **Twelve bugs were found by running the thing; the 149-test suite found none of
   them.** A DOM assertion proves an element exists, not that it looks right. Render it.
 - **WebKitGTK is not Chromium.** `applyLayout` set only `min-width:0` on growing
   flex items; WebKit's automatic minimum size let the 50-entry session list stretch
@@ -157,15 +158,14 @@ Each of these cost real time. They are in `PLAN.md` in more detail.
 
 ## Where to start
 
-1. **Resume a session.** Viewing works; continuing a past chat does not. goose
-   advertises `loadSession: true`, so it is the better prototype target for the
-   `session/load` route.
-2. Real pickers (backend switching) → the `optional-basics` capability pass.
-3. **Packaging**: sidecar-bundle the core so the window is a program, not a dev
-   run against the repo.
+1. **Capability manifest** — the honest form of "full system integration": named
+   capabilities, default-deny, policy in a root-owned file, approved through the
+   same UI as tool calls. Designed, never built (`PLAN.md` has the evaluation).
+2. `CATALOG.md` + published docs, per the design.
+3. MCP Apps hosting; light/dark palettes; Ryoku theming (deliberately deferred).
 
-(Done since the last handoff: the origin guard, the goose backend, and Tauri
-spawning the core with the window open.)
+The four-item roadmap batch (pickers, resume, virtualization, packaging) is done.
+Remaining small gaps are listed above; the largest is the capability manifest.
 
 To check capability instead of reading: run the `optional-basics` skill as a benchmark
 and report per recipe — **built** / **partial** / **blocked**, naming the missing host

@@ -1001,7 +1001,36 @@ Verified seams (probed against real agents, not assumed):
   sidebar's ids are already resumable.
 - a *live* turn emits no `user_message_chunk`; only replay does.
 
-- [ ] pickers: ACP `configOptions` → model; backend registry → harness; reconnect on switch
-- [ ] resume: ACP `session/list` + `session/load`; sidebar ids become ACP ids
-- [ ] virtualization: windowed transcript rendering
-- [ ] packaging: sidecar-bundle the core
+- [x] pickers: ACP `configOptions` → model; backend registry → harness; reconnect on switch
+- [x] resume: ACP `session/list` + `session/load`; sidebar ids become ACP ids
+- [x] virtualization: windowed transcript rendering
+- [x] packaging: sidecar-bundle the core
+
+### Done (2026-10-15)
+
+All four. The order was pickers+resume first because they share one piece of
+machinery — the ACP session lifecycle — then virtualization, then packaging last so
+it wrapped a finished app.
+
+- **Pickers.** `/backends` plus the session's `configOptions` are published on the
+  state channel; the harness picker switches by reconnecting, the model picker calls
+  `session/set_config_option`. Verified in Chromium (Pi/Goose, MODEL-A/B/C).
+- **Resume.** `session/list` became the sidebar's source (the agent's own view of its
+  store, and the only one goose has), with pi's files as the fallback; `session.load`
+  replays the conversation as events. The old "viewing is not resuming" caveat is
+  gone. Verified in Chromium.
+- **Virtualization.** Count-windowing, not position virtualization: markdown heights
+  are unknown before layout, so a measured-row implementation would be approximate
+  and jittery. The DOM holds the last 80 messages; earlier ones load a page at a
+  time. 10k renders like 80 (pinned by a test). Also fixed: a new chunk only
+  auto-scrolls when the reader was already at the bottom.
+- **Packaging.** `bun build --compile` → a standalone core binary (no Node on the
+  target), shipped via `bundle.resources`, resolved from the resource dir. A 38 MiB
+  `SBH_0.1.0_amd64.deb` builds; the release binary spawns the *bundled* core (not
+  node) and the window shows the real goose backend, model and sessions.
+
+Bugs found by running it, again not the suite:
+- the model picker was empty until the first message — `configOptions` ride on a
+  session, so the core now opens one on client connect.
+- a resume created the connection but never triggered the load; `open()` is now an
+  explicit step (the fake test caught it only because it asserted the replayed text).

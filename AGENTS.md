@@ -119,6 +119,21 @@ look transparent, which is not an app bug. The core is a child of the shell — 
 the window (not just `systemctl stop`) to watch the lifecycle, or it is reaped by
 the cgroup and the proof is worthless.
 
+### Packaging
+
+`npm run build:core` compiles `core/index.ts` into a standalone binary with
+`bun build --compile` — no Node runtime on the target — written to
+`src-tauri/binaries/sbh-core` (gitignored, ~80 MB). `bundle.resources` ships it in
+the bundle, and the shell resolves `<resource_dir>/binaries/sbh-core`, falling back
+to Node + the repo script only in dev (`SBH_CORE_BIN` overrides both).
+`npx tauri build --bundles deb` builds the frontend, the core, and the `.deb`
+(~38 MiB). The bundle identifier must not be `com.tauri.dev`.
+
+To test the release binary against its bundled core without installing: extract
+`usr/lib/SBH/binaries/sbh-core` from the `.deb` into
+`src-tauri/target/release/binaries/`, then run `src-tauri/target/release/app` and
+check the child process is that binary, not `node`.
+
 ## Writing a component
 
 Components are the extension surface. A built-in and an agent-authored component
