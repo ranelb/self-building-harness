@@ -21,6 +21,7 @@ const withMessages = (count: number): RenderContext => {
       messages,
       items,
       changedFiles: [],
+      commands: [],
       draftAttachments: [],
       capabilities: { image: false, audio: false, embeddedContext: false, fork: false },
       status: 'idle',
@@ -249,5 +250,28 @@ describe('composer', () => {
     expect(el.querySelector('[data-attachments]')?.textContent).toContain('p.png')
     ;(el.querySelector('button[data-send]') as HTMLButtonElement).click()
     expect(actions).toEqual(['prompt.send'])
+  })
+
+  it('offers a / menu filtered by the typed query, and inserts the choice', () => {
+    const base = withMessages(0)
+    const ctx: RenderContext = {
+      ...base,
+      host: {
+        ...base.host,
+        commands: [
+          { name: 'skill:grilling', description: 'grill' },
+          { name: 'model', description: 'pick' },
+        ],
+      },
+    }
+    const el = renderTree({ type: 'composer' }, ctx) as HTMLElement
+    const input = el.querySelector('input[data-atom="input"]') as HTMLInputElement
+    input.value = '/gr'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    const items = el.querySelectorAll('button[data-command]')
+    expect(items).toHaveLength(1)
+    expect(items[0]?.getAttribute('data-command')).toBe('skill:grilling')
+    ;(items[0] as HTMLButtonElement).dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    expect(input.value).toBe('/skill:grilling ')
   })
 })

@@ -91,6 +91,28 @@ describe('normalizeUpdate', () => {
     ).toEqual([{ type: 'user.chunk', text: 'hi' }])
   })
 
+  it('maps available_commands_update to a commands event, dropping junk', () => {
+    expect(
+      normalizeUpdate({
+        sessionUpdate: 'available_commands_update',
+        availableCommands: [
+          { name: 'skill:grilling', description: 'grill me' },
+          { name: 'model', description: 'pick a model', input: { type: 'text' } },
+          { bad: true },
+        ],
+      })
+    ).toEqual([
+      {
+        type: 'commands',
+        commands: [
+          { name: 'skill:grilling', description: 'grill me' },
+          { name: 'model', description: 'pick a model', input: { type: 'text' } },
+        ],
+      },
+    ])
+    expect(normalizeUpdate({ sessionUpdate: 'available_commands_update' })).toEqual([])
+  })
+
   it('maps a usage update to a usage event', () => {
     // Without this the context meter looks impossible to build: ACP carries the
     // data, and the normalizer was dropping it on the floor.

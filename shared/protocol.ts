@@ -19,6 +19,14 @@ export interface SessionConfigOption {
   options: { value: string; label: string }[]
 }
 
+/** A command an agent advertises (ACP `available_commands_update`). */
+export interface AvailableCommand {
+  name: string
+  description: string
+  /** Non-null when the command takes input (ACP AvailableCommandInput). */
+  input?: unknown
+}
+
 export type UiEvent =
   | { type: 'chunk'; text: string }
   | { type: 'user.chunk'; text: string }
@@ -62,6 +70,8 @@ export type UiEvent =
   | { type: 'turn.started' }
   | { type: 'turn.finished'; stopReason: string }
   | { type: 'session.reset'; reason: 'new' | 'fork' | 'resume' }
+  /** The agent's slash commands (skills, builtins), for the composer's `/` menu. */
+  | { type: 'commands'; commands: AvailableCommand[] }
   /** Agent capabilities from `initialize`; the core republishes as state. */
   | { type: 'capabilities'; image: boolean; audio: boolean; embeddedContext: boolean; fork: boolean }
   | { type: 'error'; message: string }

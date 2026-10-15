@@ -16,7 +16,7 @@ import {
 } from '../tree/render.ts'
 import { renderMarkdown } from '../tree/markdown.ts'
 import { controlStyle, fieldStyle } from '../atoms/style.ts'
-import type { Attachment } from '../../../shared/protocol.ts'
+import type { Attachment, AvailableCommand } from '../../../shared/protocol.ts'
 import type { TimelineItem } from '../../../shared/ui.ts'
 
 const stream = (el: HTMLElement, node: UiNode): void => {
@@ -520,7 +520,7 @@ registerComponent({
 
 const ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024
 
-type ComposerHost = HTMLElement & { __error?: string }
+type ComposerHost = HTMLElement & { __error?: string; __menuIndex?: number }
 
 /** Paint the composer's inline error immediately; a host update is not coming. */
 const paintComposerError = (el: ComposerHost): void => {
@@ -561,8 +561,7 @@ const addFiles = (el: ComposerHost, files: File[]): void => {
   paintComposerError(el)
 }
 
-const paintAttachments = (tray: HTMLElement, attachments: Attachment[], el: ComposerHost): void => {
-  if (attachments.length === 0) {
+const paintAttachments = (tray: HTMLElement, attachments: Attachment[], el: ComposerHost): void => {  if (attachments.length === 0) {
     tray.style.display = 'none'
     tray.replaceChildren()
     return
@@ -582,6 +581,74 @@ const paintAttachments = (tray: HTMLElement, attachments: Attachment[], el: Comp
     })
     chip.appendChild(remove)
     tray.appendChild(chip)
+  })
+}
+
+/** Insert a chosen command into the input and let the user add arguments. */
+const chooseCommand = (el: ComposerHost, input: HTMLInputElement, command: AvailableCommand): void => {
+  input.value = `/${command.name} `
+  const live = getLive(el)
+  if (live) live.ctx.dispatch('prompt.draft', { value: input.value })
+  input.focus()
+  const menu = el.querySelector('[data-commands]') as HTMLElement | null
+  if (menu) {
+    menu.style.display = 'none'
+    menu.replaceChildren()
+  }
+}
+
+/**
+ * The `/` menu: filter the agent's commands (skills, builtins) by what is typed
+ * after the slash, until a space ends the command token.
+ */
+const paintCommands = (el: ComposerHost, input: HTMLInputElement, commands: AvailableCommand[]): void => {
+  const menu = el.querySelector('[data-commands]') as HTMLElement | null
+  if (!menu) return
+  const query =
+    input.value.startsWith('/') && !input.value.includes(' ')
+      ? input.value.slice(1).toLowerCase()
+      : null
+  const matches =
+    query === null
+      ? []
+      : commands.filter((command) => command.name.toLowerCase().includes(query)).slice(0, 8)
+  if (matches.length === 0) {
+    menu.style.display = 'none'
+    menu.replaceChildren()
+    return
+  }
+  const index = Math.min(Math.max(el.__menuIndex ?? 0, 0), matches.length - 1)
+  el.__menuIndex = index
+  menu.style.display = 'flex'
+  menu.replaceChildren()
+  matches.forEach((command, at) => {
+    const item = document.createElement('button')
+    item.type = 'button'
+    item.setAttribute('data-command', command.name)
+    item.style.cssText =
+      'display:flex;flex-direction:column;gap:2px;text-align:left;border:none;' +
+      'border-radius:var(--sbh-radius-sm);padding:var(--sbh-space-xs) var(--sbh-space-sm);' +
+      'cursor:pointer;font:inherit;color:var(--sbh-color-text);background:' +
+      (at === index ? 'var(--sbh-color-surface-alt)' : 'transparent')
+    const name = document.createElement('span')
+    name.textContent = `/${command.name}`
+    name.style.cssText =
+      'font-family:var(--sbh-font-mono);font-size:var(--sbh-font-size-sm);color:var(--sbh-color-accent)'
+    item.appendChild(name)
+    if (command.description) {
+      const description = document.createElement('span')
+      description.textContent = command.description
+      description.style.cssText =
+        'font-size:var(--sbh-font-size-sm);color:var(--sbh-color-text-muted);' +
+        'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%'
+      item.appendChild(description)
+    }
+    // mousedown, not click: the input's blur would otherwise close the menu first.
+    item.addEventListener('mousedown', (event) => {
+      event.preventDefault()
+      chooseCommand(el, input, command)
+    })
+    menu.appendChild(item)
   })
 }
 
@@ -630,11 +697,37 @@ registerComponent({
     input.addEventListener('input', () => {
       const live = getLive(el)
       if (live) live.ctx.dispatch('prompt.draft', { value: input.value })
+      el.__menuIndex = 0
+      if (live) paintCommands(el, input, live.ctx.host.commands)
     })
     input.addEventListener('keydown', (event) => {
       const key = (event as KeyboardEvent).key
       const live = getLive(el)
       if (!live) return
+      const menu = el.querySelector('[data-commands]') as HTMLElement | null
+      const open = !!menu && menu.style.display !== 'none' && menu.children.length > 0
+      if (open && (key === 'ArrowDown' || key === 'ArrowUp')) {
+        event.preventDefault()
+        const count = menu!.children.length
+        el.__menuIndex = ((el.__menuIndex ?? 0) + (key === 'ArrowDown' ? 1 : -1) + count) % count
+        paintCommands(el, input, live.ctx.host.commands)
+        return
+      }
+      if (open && key === 'Enter') {
+        event.preventDefault()
+        const chosen = menu!.querySelectorAll('button[data-command]')[el.__menuIndex ?? 0]
+        const command = live.ctx.host.commands.find(
+          (entry) => entry.name === (chosen as HTMLElement | undefined)?.dataset.command
+        )
+        if (command) chooseCommand(el, input, command)
+        return
+      }
+      if (open && key === 'Escape') {
+        event.preventDefault()
+        menu!.style.display = 'none'
+        menu!.replaceChildren()
+        return
+      }
       if (key === 'Enter') live.ctx.dispatch('prompt.send')
       else if (key === 'Escape' && live.ctx.host.status === 'streaming') live.ctx.dispatch('turn.cancel')
     })
@@ -670,8 +763,15 @@ registerComponent({
       live.ctx.dispatch(live.ctx.host.status === 'streaming' ? 'turn.cancel' : 'prompt.send')
     })
 
+    const menu = document.createElement('div')
+    menu.setAttribute('data-commands', '')
+    menu.style.cssText =
+      'display:none;flex-direction:column;gap:2px;max-height:240px;overflow-y:auto;' +
+      'border:1px solid var(--sbh-color-border);border-radius:var(--sbh-radius-md);' +
+      'background:var(--sbh-color-surface);padding:var(--sbh-space-xs)'
+
     row.append(attach, input, send)
-    el.append(tray, error, row, picker)
+    el.append(menu, tray, error, row, picker)
     return el
   },
   update(el, _node, ctx) {
@@ -682,6 +782,7 @@ registerComponent({
     if (input && document.activeElement !== input && input.value !== ctx.host.draft) {
       input.value = ctx.host.draft
     }
+    if (input) paintCommands(element, input, ctx.host.commands)
 
     const send = element.querySelector('button[data-send]') as HTMLButtonElement | null
     if (send) send.textContent = ctx.host.status === 'streaming' ? 'Stop' : 'Send'

@@ -4,7 +4,7 @@
  * The event type itself lives in `shared/protocol.ts` — the UI speaks it too, and
  * UI code must not import from `core/`.
  */
-import type { UiEvent } from '../shared/protocol.ts'
+import type { AvailableCommand, UiEvent } from '../shared/protocol.ts'
 
 export type { UiEvent } from '../shared/protocol.ts'
 
@@ -74,6 +74,23 @@ export function normalizeUpdate(update: unknown): UiEvent[] {
     case 'agent_thought_chunk': {
       const text = textOf(update.content)
       return text === null ? [] : [{ type: 'thought', text }]
+    }
+
+    case 'available_commands_update': {
+      // The composer's `/` menu. pi advertises its builtins and its skills here, so
+      // a skill is reachable without the agent knowing pi's command syntax.
+      const raw = update.availableCommands
+      if (!Array.isArray(raw)) return []
+      const commands: AvailableCommand[] = []
+      for (const entry of raw) {
+        if (!isRecord(entry) || typeof entry.name !== 'string') continue
+        commands.push({
+          name: entry.name,
+          description: typeof entry.description === 'string' ? entry.description : '',
+          ...(entry.input !== undefined ? { input: entry.input } : {}),
+        })
+      }
+      return [{ type: 'commands', commands }]
     }
 
     case 'usage_update': {

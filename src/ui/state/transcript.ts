@@ -8,6 +8,7 @@
  */
 import type { AgentCapabilities, Attachment, PermissionRequest, UiEvent } from '../../../shared/protocol.ts'
 import type { ChangedFilesGroup, HostMessage, TimelineItem, ToolLocation } from '../../../shared/ui.ts'
+import type { AvailableCommand } from '../../../shared/protocol.ts'
 
 export type { AgentCapabilities } from '../../../shared/protocol.ts'
 export type { ChangedFilesGroup, TimelineItem, ToolLocation } from '../../../shared/ui.ts'
@@ -21,6 +22,8 @@ export interface Transcript {
   error?: string
   /** Files touched by `edit` tools, grouped by the turn that touched them. */
   changedFiles: ChangedFilesGroup[]
+  /** The agent's slash commands for the composer's `/` menu. */
+  commands: AvailableCommand[]
   capabilities: AgentCapabilities
   /** Monotonic counter; the current turn's group key. */
   turn: number
@@ -40,6 +43,7 @@ export const empty = (): Transcript => ({
   pendingPermission: [],
   status: 'idle',
   changedFiles: [],
+  commands: [],
   capabilities: noCapabilities(),
   turn: 0,
 })
@@ -215,6 +219,9 @@ export function applyEvent(state: Transcript, event: UiEvent): Transcript {
           fork: event.fork,
         },
       }
+
+    case 'commands':
+      return { ...state, commands: event.commands }
 
     case 'turn.finished':
       return { ...state, status: 'idle' }

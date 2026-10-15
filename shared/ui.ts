@@ -3,7 +3,7 @@
  * and consumed by the UI.
  */
 
-import type { AgentCapabilities, Attachment, PermissionRequest } from './protocol.ts'
+import type { AgentCapabilities, Attachment, AvailableCommand, PermissionRequest } from './protocol.ts'
 
 export interface UiNode {
   type: string
@@ -96,6 +96,8 @@ export interface HostState {
   items: TimelineItem[]
   /** Files edited, grouped per turn. */
   changedFiles: ChangedFilesGroup[]
+  /** The agent's slash commands for the composer's `/` menu. */
+  commands: AvailableCommand[]
   /** Attachments staged in the composer, not yet sent. */
   draftAttachments: Attachment[]
   /** What the agent reported it can do (image, fork, …). */

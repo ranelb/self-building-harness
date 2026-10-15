@@ -176,6 +176,7 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
     messages: toMessages(transcript),
     items: transcript.items,
     changedFiles: transcript.changedFiles,
+    commands: transcript.commands,
     draftAttachments: attachments,
     capabilities: transcript.capabilities,
     status: transcript.status,
