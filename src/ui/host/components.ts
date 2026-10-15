@@ -331,6 +331,91 @@ registerComponent({
   },
 })
 
+// --- usage (context %, cost, tokens) ---------------------------------------------
+
+const readUsagePref = (key: string, fallback: boolean): boolean => {
+  try {
+    const value = localStorage.getItem(key)
+    return value === null ? fallback : value === '1'
+  } catch {
+    return fallback
+  }
+}
+const writeUsagePref = (key: string, value: boolean): void => {
+  try {
+    localStorage.setItem(key, value ? '1' : '0')
+  } catch {
+    // storage unavailable; the toggle just does not persist
+  }
+}
+
+/** Cost arrives as a number or an ACP `{ amount, currency }`; show the amount. */
+const formatCost = (cost: unknown): string => {
+  if (typeof cost === 'number') return cost.toFixed(2)
+  if (cost && typeof cost === 'object' && 'amount' in cost) {
+    const amount = (cost as { amount?: unknown }).amount
+    if (typeof amount === 'number') return amount.toFixed(2)
+  }
+  return '0.00'
+}
+
+registerComponent({
+  name: 'usage',
+  create() {
+    const el = document.createElement('div')
+    el.setAttribute('data-atom', 'usage')
+    el.style.cssText =
+      'display:none;align-items:center;gap:var(--sbh-space-sm);flex-wrap:wrap;' +
+      'font-size:var(--sbh-font-size-sm);color:var(--sbh-color-text-muted);padding:var(--sbh-space-xs) 0'
+    return el
+  },
+  update(el, _node, ctx) {
+    const host = el as HTMLElement
+    const usage = ctx.host.data.usage as { used?: unknown; size?: unknown; cost?: unknown } | undefined
+    if (!usage || typeof usage.used !== 'number' || typeof usage.size !== 'number' || usage.size <= 0) {
+      host.style.display = 'none'
+      host.replaceChildren()
+      return
+    }
+    host.style.display = 'flex'
+    host.replaceChildren()
+    const percent = Math.max(0, Math.min(100, Math.round((usage.used / usage.size) * 100)))
+
+    const bar = document.createElement('span')
+    bar.style.cssText =
+      'display:inline-block;width:90px;height:6px;border-radius:var(--sbh-radius-full);' +
+      'background:var(--sbh-color-surface-alt);border:1px solid var(--sbh-color-border);overflow:hidden'
+    const fill = document.createElement('span')
+    fill.style.cssText = `display:block;height:100%;width:${percent}%;background:var(--sbh-color-accent)`
+    bar.appendChild(fill)
+
+    const context = document.createElement('span')
+    context.textContent = `context ${percent}%`
+    context.style.color = percent >= 90 ? 'var(--sbh-color-danger)' : 'var(--sbh-color-text-muted)'
+
+    const cost = document.createElement('span')
+    cost.textContent = `$${formatCost(usage.cost)}`
+
+    const expanded = readUsagePref('sbh.usage.expanded', false)
+    const tokens = document.createElement('span')
+    tokens.textContent = `${usage.used.toLocaleString()} / ${usage.size.toLocaleString()} tokens`
+    tokens.style.display = expanded ? '' : 'none'
+
+    const toggle = document.createElement('button')
+    toggle.textContent = 'Tokens \u25be'
+    toggle.style.cssText =
+      'border:none;background:transparent;color:var(--sbh-color-text-muted);cursor:pointer;' +
+      'font:inherit;font-size:var(--sbh-font-size-sm);padding:0'
+    toggle.addEventListener('click', () => {
+      const next = tokens.style.display === 'none'
+      tokens.style.display = next ? '' : 'none'
+      writeUsagePref('sbh.usage.expanded', next)
+    })
+
+    host.append(bar, context, cost, toggle, tokens)
+  },
+})
+
 // --- permission ------------------------------------------------------------------
 
 /** Pretty-print a tool call's raw input for display. A reference, not a rule. */

@@ -284,6 +284,10 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
       await ready
       if (handshakeError) return
       if (opts.resume) {
+        // A load replays the conversation as session updates. Wrap it in a turn so
+        // clients do not sit in `streaming` forever (Send stuck as Stop) and a
+        // deferred-markdown transcript still gets a boundary to finalize on.
+        emit({ type: 'turn.started' })
         const loaded = await request('session/load', {
           sessionId: opts.resume.sessionId,
           cwd: opts.resume.cwd ?? opts.cwd,
@@ -291,6 +295,7 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
         })
         sessionId = opts.resume.sessionId
         emitConfig(loaded?.result?.configOptions)
+        emit({ type: 'turn.finished', stopReason: 'end_turn' })
         return
       }
       // `mcpServers` is required by NewSessionRequest alongside `cwd`, not optional.

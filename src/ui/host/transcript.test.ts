@@ -129,6 +129,30 @@ describe('sessions sidebar', () => {
   })
 })
 
+describe('usage', () => {
+  it('shows context percent and cost by default, tokens collapsed', () => {
+    const base = withMessages(0)
+    const ctx: RenderContext = {
+      ...base,
+      host: {
+        ...base.host,
+        data: { usage: { used: 2500, size: 10000, cost: { amount: 0.12, currency: 'USD' } } },
+      },
+    }
+    const el = renderTree({ type: 'usage' }, ctx) as HTMLElement
+    expect(el.style.display).toBe('flex')
+    expect(el.textContent).toContain('context 25%')
+    expect(el.textContent).toContain('$0.12')
+    const tokens = [...el.querySelectorAll('span')].find((s) => s.textContent.includes('tokens'))
+    expect(tokens?.style.display).toBe('none')
+  })
+
+  it('hides when there is no usage', () => {
+    const el = renderTree({ type: 'usage' }, withMessages(0)) as HTMLElement
+    expect(el.style.display).toBe('none')
+  })
+})
+
 describe('timeline items', () => {
   it('renders reasoning and a tool card from items', () => {
     const base = withMessages(0)

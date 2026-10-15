@@ -122,6 +122,17 @@ describe('connectAcp', () => {
     conn.close()
   })
 
+  it('finishes a resumed session so the client is not left streaming', async () => {
+    const conn = connectAcp({ ...fake('happy'), resume: { sessionId: 'saved-1' } })
+    const events = collect(conn)
+    await conn.open()
+    const finished = events.filter(
+      (e): e is Extract<UiEvent, { type: 'turn.finished' }> => e.type === 'turn.finished'
+    )
+    expect(finished.length).toBeGreaterThan(0)
+    conn.close()
+  })
+
   it('reassembles a chunk split across a multibyte boundary', async () => {
     const conn = connectAcp(fake('split-multibyte'))
     const events = collect(conn)
