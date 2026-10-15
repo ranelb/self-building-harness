@@ -17,6 +17,7 @@ import { sampleSystem } from './system.ts'
 import { ensureRepo, history, revertLast, snapshot } from './versioning.ts'
 import { watchPaths } from './watch.ts'
 import { DENY_BY_DEFAULT, respondToPermission, type PermissionPolicy } from './acp/permissions.ts'
+import { isOriginAllowed, resolveAllowedOrigins } from './origin.ts'
 import type { UiEvent } from './events.ts'
 
 /**
@@ -48,6 +49,8 @@ export interface CoreOptions {
   sampleIntervalMs?: number
   /** Where the harness keeps its sessions. Read-only, always. */
   sessionsRoot?: string
+  /** Browser origins allowed to reach this core. Overrides the default set. */
+  allowedOrigins?: readonly string[]
 }
 
 export interface Core {
@@ -68,6 +71,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
   const componentsDir = options.componentsDir ?? join(configDir, 'components')
   const sessionsRoot =
     options.sessionsRoot ?? process.env.SBH_SESSIONS_DIR ?? join(homedir(), '.pi', 'agent', 'sessions')
+  const allowedOrigins = resolveAllowedOrigins(options.allowedOrigins)
   await ensureComponentsDir(componentsDir)
   await ensureThemeFile(configDir)
   await ensureLayoutFile(configDir)
@@ -112,6 +116,19 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     // before the query.
     const url = (req.url ?? '').split('?')[0] ?? ''
 
+    // The origin guard runs before routing: a browser that sends an Origin we do
+    // not trust is refused everything, reads included. A request with no Origin
+    // is a non-browser client (tests, curl) and is allowed.
+    const origin = req.headers.origin
+    if (!isOriginAllowed(origin, allowedOrigins)) {
+      res.writeHead(403, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ error: 'origin not allowed' }))
+      return
+    }
+    // Echo the caller's origin rather than `*`, so only an allowed page can read
+    // a response even if the allowlist is later loosened.
+    if (origin) res.setHeader('access-control-allow-origin', origin)
+
     if (req.method === 'GET' && url === '/health') {
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify({ ok: true }))
@@ -120,7 +137,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
 
     if (req.method === 'GET' && url === '/theme') {
       void readTheme(configDir).then((theme) => {
-        res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
+        res.writeHead(200, { 'content-type': 'application/json' })
         res.end(JSON.stringify(theme))
       })
       return
@@ -131,7 +148,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     // loopback-only.
     if (req.method === 'GET' && url === '/components') {
       void listComponents(componentsDir).then((components) => {
-        res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
+        res.writeHead(200, { 'content-type': 'application/json' })
         res.end(JSON.stringify({ components }))
       })
       return
@@ -141,13 +158,12 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     if (req.method === 'GET' && match) {
       void readComponent(componentsDir, match[1] as string).then((source) => {
         if (source === null) {
-          res.writeHead(404, { 'access-control-allow-origin': '*' })
+          res.writeHead(404)
           res.end()
           return
         }
         res.writeHead(200, {
           'content-type': 'text/javascript',
-          'access-control-allow-origin': '*',
           'cache-control': 'no-store',
         })
         res.end(source)
@@ -157,7 +173,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
 
     if (req.method === 'GET' && url === '/layout') {
       void readLayout(configDir).then((layout) => {
-        res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
+        res.writeHead(200, { 'content-type': 'application/json' })
         res.end(JSON.stringify(layout))
       })
       return
@@ -165,7 +181,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
 
     if (req.method === 'GET' && url === '/sessions') {
       void listSessions(sessionsRoot).then((sessions) => {
-        res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
+        res.writeHead(200, { 'content-type': 'application/json' })
         // `path` stays in the core: the browser has no use for a local path.
         res.end(JSON.stringify({ sessions: sessions.map(({ path: _path, ...rest }) => rest) }))
       })
@@ -176,11 +192,11 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     if (req.method === 'GET' && sessionMatch) {
       void readSession(sessionsRoot, sessionMatch[1] as string).then((detail) => {
         if (!detail) {
-          res.writeHead(404, { 'access-control-allow-origin': '*' })
+          res.writeHead(404)
           res.end()
           return
         }
-        res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
+        res.writeHead(200, { 'content-type': 'application/json' })
         res.end(JSON.stringify(detail))
       })
       return
@@ -188,7 +204,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
 
     if (req.method === 'GET' && url === '/history') {
       void history(configDir).then((commits) => {
-        res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
+        res.writeHead(200, { 'content-type': 'application/json' })
         res.end(JSON.stringify({ commits }))
       })
       return
@@ -200,7 +216,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
           sendToAll({ type: 'invalidate', what: 'components' })
           sendToAll({ type: 'invalidate', what: 'theme' })
         }
-        res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
+        res.writeHead(200, { 'content-type': 'application/json' })
         res.end(JSON.stringify({ reverted }))
       })
       return
@@ -210,7 +226,17 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     res.end()
   })
 
-  const wss = new WebSocketServer({ server: http, path: '/ws' })
+  const wss = new WebSocketServer({
+    server: http,
+    path: '/ws',
+    // Same guard on the upgrade: a web page can open a WebSocket cross-origin,
+    // and this socket drives the agent. Node's `ws` client sends no Origin, so
+    // the test suite and CLI clients are unaffected.
+    verifyClient: (info, cb) => {
+      if (isOriginAllowed(info.origin, allowedOrigins)) cb(true)
+      else cb(false, 403, 'origin not allowed')
+    },
+  })
 
   wss.on('connection', (socket) => {
     clients.add(socket)

@@ -95,3 +95,38 @@ describe('core server', () => {
     ws.close()
   })
 })
+
+describe('origin guard', () => {
+  const STRANGER = 'https://evil.example'
+  const DEV = 'http://127.0.0.1:5199'
+
+  it('refuses an untrusted browser origin on every route, reads included', async () => {
+    core = await startCore({ port: 0, backend: 'fake:happy' })
+    const health = await fetch(`http://127.0.0.1:${core.port}/health`, { headers: { origin: STRANGER } })
+    expect(health.status).toBe(403)
+
+    const history = await fetch(`http://127.0.0.1:${core.port}/history`, { headers: { origin: STRANGER } })
+    expect(history.status).toBe(403)
+  })
+
+  it('refuses an untrusted origin on the WebSocket upgrade', async () => {
+    core = await startCore({ port: 0, backend: 'fake:happy' })
+    const ws = new WebSocket(`ws://127.0.0.1:${core.port}/ws`, { origin: STRANGER })
+    const error = await new Promise<Error>((resolve) => ws.on('error', resolve))
+    expect(String(error)).toMatch(/403|Unexpected/)
+  })
+
+  it('admits the dev origin and echoes it instead of a wildcard', async () => {
+    core = await startCore({ port: 0, backend: 'fake:happy' })
+    const res = await fetch(`http://127.0.0.1:${core.port}/health`, { headers: { origin: DEV } })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('access-control-allow-origin')).toBe(DEV)
+  })
+
+  it('admits the dev origin on the WebSocket upgrade', async () => {
+    core = await startCore({ port: 0, backend: 'fake:happy' })
+    const ws = new WebSocket(`ws://127.0.0.1:${core.port}/ws`, { origin: DEV })
+    await once(ws, 'open')
+    ws.close()
+  })
+})
