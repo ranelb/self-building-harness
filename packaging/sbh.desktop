@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=SBH
+Comment=Self-Building Harness
+Exec=sbh
+Icon=sbh
+Terminal=false
+Categories=Development;Utility;
+Keywords=agent;ai;acp;harness;
+StartupWMClass=SBH

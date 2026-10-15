@@ -1,0 +1,47 @@
+# Maintainer: ran
+#
+# A local package: it builds the checkout this PKGBUILD lives in (`packaging/..`)
+# rather than fetching a tarball, because SBH is a personal tool with no release
+# feed. Run it from this directory:  cd packaging && makepkg -si
+pkgname=sbh
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Self-Building Harness: a harness host whose interface an agent authors over ACP"
+arch=('x86_64')
+url="https://github.com/"
+license=('custom')
+depends=('webkit2gtk-4.1' 'gtk3')
+makedepends=('rust' 'npm' 'bun-bin' 'pkgconf')
+backup=('etc/sbh/capabilities.toml')
+options=('!strip' '!debug')
+source=()
+b2sums=()
+
+_repo="$startdir/.."
+
+build() {
+  cd "$_repo"
+  # Build through the Tauri CLI, not bare `cargo build --release`: the CLI sets the
+  # env that selects the embedded frontend. Without it the release binary stays in
+  # dev mode and the window tries http://localhost:5173 and shows "connection
+  # refused". `--no-bundle` skips the deb/rpm/appimage step. Its beforeBuildCommand
+  # (`npm run build`) also compiles the core sidecar into src-tauri/binaries/.
+  npx tauri build --no-bundle
+}
+
+package() {
+  cd "$_repo"
+
+  # The window; the frontend is embedded in it by tauri-build.
+  install -Dm755 src-tauri/target/release/app "$pkgdir/usr/bin/sbh"
+  # The core sidecar: a standalone bun-compiled binary, no Node runtime needed.
+  install -Dm755 src-tauri/binaries/sbh-core "$pkgdir/usr/lib/SBH/binaries/sbh-core"
+  # The operator CLI for the capability manifest (SBH never elevates itself).
+  install -Dm755 packaging/sbh-policy "$pkgdir/usr/bin/sbh-policy"
+  # Root-owned, disabled by default; `backup` keeps your edits across upgrades.
+  install -Dm644 examples/capabilities.toml "$pkgdir/etc/sbh/capabilities.toml"
+
+  install -Dm644 packaging/sbh.desktop "$pkgdir/usr/share/applications/sbh.desktop"
+  install -Dm644 src-tauri/icons/32x32.png "$pkgdir/usr/share/icons/hicolor/32x32/apps/sbh.png"
+  install -Dm644 src-tauri/icons/128x128.png "$pkgdir/usr/share/icons/hicolor/128x128/apps/sbh.png"
+}

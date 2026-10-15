@@ -59,9 +59,9 @@ natively) handshakes and completes a real turn through the core — `turn.starte
 `usage`/`thought`/`chunk`, `turn.finished end_turn`, reply intact. This makes the
 central claim n=2.
 
-**Never verified:** an *installed* app. A `.deb` builds and the release binary was
-run from the tree against its bundled core; nothing has been installed
-system-wide, and there is no rpm/AppImage pass or an update story.
+**Never verified:** an *installed* app on a non-Arch distro. The Arch package is
+built, installed and run (see below); the `.deb` is built but not installed
+anywhere, and there is no upgrade story.
 
 ## What is left
 
@@ -70,11 +70,15 @@ system-wide, and there is no rpm/AppImage pass or an update story.
   script; a packaged build spawns the bundled binary. Both verified.
 - ~~Open the window~~ — **done.** Verified on this Wayland session.
 - ~~Origin check~~ — **done.** Exact-match allowlist on every route and the WS.
-- ~~Packaging~~ — **done, mostly.** `npm run build:core` compiles the core to a
-  standalone binary (`bun build --compile`, no Node on the target), shipped at
-  `binaries/sbh-core` and resolved from the resource dir. `npx tauri build
-  --bundles deb` produces a 38 MiB `SBH_0.1.0_amd64.deb`. Left: rpm/AppImage,
-  installing it system-wide, and an update story.
+- ~~Packaging~~ — **done and installed.** `npm run build:core` compiles the core to
+  a standalone binary (`bun build --compile`, no Node on the target), shipped at
+  `binaries/sbh-core` and resolved from the resource dir. On Arch,
+  `cd packaging && makepkg -si` installs `sbh` — root-owned `/usr/bin/sbh`,
+  `/usr/bin/sbh-policy`, `/usr/lib/SBH/binaries/sbh-core`,
+  `/etc/sbh/capabilities.toml` (disabled), a `.desktop` and icons. Verified
+  installed: the window loads the embedded UI, spawns the bundled core, and closing
+  it reaps the core. The `.deb` still builds for Debian-family. Left: rpm/AppImage,
+  upgrades, and running installed on any non-Arch box.
 
 ### The thesis is proven enough
 - **A second backend** — `goose` works end to end, including its own session

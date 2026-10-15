@@ -130,6 +130,19 @@ to Node + the repo script only in dev (`SBH_CORE_BIN` overrides both).
 `npx tauri build --bundles deb` builds the frontend, the core, and the `.deb`
 (~38 MiB). The bundle identifier must not be `com.tauri.dev`.
 
+**Arch:** this box is Arch, not Debian — `dpkg` is absent, so a `.deb` is a dead
+end. Use the local package: `cd packaging && makepkg -si` builds and installs
+`sbh` (root-owned `/usr/bin/sbh`, `/usr/bin/sbh-policy`, `/usr/lib/SBH/binaries/sbh-core`,
+`/etc/sbh/capabilities.toml`, a `.desktop` and icons). `pkgver` must track
+`src-tauri/tauri.conf.json`.
+
+**Build the release binary through the Tauri CLI, never bare `cargo build
+--release`.** The CLI sets the env that selects the embedded frontend; a bare cargo
+build leaves the app in dev mode, so the window tries `http://localhost:5173` and
+shows "connection refused". The `PKGBUILD` uses `npx tauri build --no-bundle` for
+exactly this reason — `bundle.resources` also means `binaries/sbh-core` must exist
+before cargo compiles, and `--no-bundle`'s `beforeBuildCommand` creates it.
+
 To test the release binary against its bundled core without installing: extract
 `usr/lib/SBH/binaries/sbh-core` from the `.deb` into
 `src-tauri/target/release/binaries/`, then run `src-tauri/target/release/app` and

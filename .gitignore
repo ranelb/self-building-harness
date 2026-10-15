@@ -15,6 +15,11 @@ dist-ssr
 # The compiled core binary (built by `npm run build:core`)
 src-tauri/binaries
 
+# Arch package build artifacts
+packaging/pkg/
+packaging/src/
+packaging/*.pkg.tar.*
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

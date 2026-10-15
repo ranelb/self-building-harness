@@ -1123,3 +1123,27 @@ wrapper that execs `sbh-core policy`. Verified in the built deb (modes 0644 / 07
 Trap: a second entry point in `core/policy.ts` (an `import.meta.url === argv[1]`
 guard) double-fired inside the bun bundle, where both point at the virtual entry,
 and hijacked the `policy` subcommand. One entry point only; `index.ts` dispatches.
+
+## Arch package, installed and verified (2026-10-15)
+
+ran: "arch package definitely". Built `packaging/PKGBUILD` (local source, builds the
+checkout it sits in) + `packaging/sbh.desktop`. Installs `sbh` with root-owned
+`/usr/bin/sbh`, `/usr/bin/sbh-policy`, `/usr/lib/SBH/binaries/sbh-core`,
+`/etc/sbh/capabilities.toml` (`backup=()` so edits survive upgrades), desktop entry
+and icons. `makepkg -si` then `pkexec pacman -U`.
+
+Two things found by installing, not by tests:
+
+- **The first package was broken.** `cargo build --release` run directly leaves the
+  Tauri app in *dev* mode: the window loads `http://localhost:5173` and shows
+  "connection refused". The release binary must be built through the Tauri CLI
+  (`npx tauri build --no-bundle`), which sets the env that selects the embedded
+  frontend. Grepping the binary for `localhost:5173` is useless — the string is in
+  the embedded config either way; the real check is whether the webview connects to
+  the spawned core.
+- Installing also exercised the sidecar path end to end for the first time: the
+  installed `/usr/bin/sbh` resolves `/usr/lib/SBH/binaries/sbh-core` from the
+  resource dir, the webview connects over loopback, and closing the window reaps
+  the core.
+
+The `.deb` builds but is a dead end on Arch (no dpkg); it stays for Debian-family.
