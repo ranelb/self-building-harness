@@ -9,6 +9,7 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { WebSocketServer, WebSocket } from 'ws'
 import { connectAcp, type AcpConnection, type AcpSessionInfo } from './acp/client.ts'
+import { attachmentBlocks } from './attachments.ts'
 import { BACKEND_IDS, resolveBackend } from './backends/registry.ts'
 import { ensureComponentsDir } from './components.ts'
 import {
@@ -121,6 +122,11 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
   const auditPath =
     options.auditPath ??
     join(process.env.SBH_STATE_DIR ?? join(homedir(), '.local', 'state', 'sbh'), 'audit.log')
+  const attachmentsBase = join(
+    process.env.SBH_STATE_DIR ?? join(homedir(), '.local', 'state', 'sbh'),
+    'attachments'
+  )
+  let attachmentSequence = 0
   await ensureComponentsDir(componentsDir)
   await ensureThemeFile(configDir)
   await ensureLayoutFile(configDir)
@@ -524,8 +530,24 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
       }
 
       if (msg.type === 'prompt' && typeof msg.text === 'string') {
-        if (!msg.text.trim()) return
-        void ensureConnection().prompt(msg.text)
+        const attachments = Array.isArray(msg.attachments) ? msg.attachments : []
+        if (!msg.text.trim() && attachments.length === 0) return
+        const connection = ensureConnection()
+        void (async () => {
+          try {
+            // Images only go to a backend that can see them; everything else is
+            // persisted and handed over as a file. The connection persists while
+            // the prompt runs, so reading capabilities here is safe.
+            const blocks = await attachmentBlocks(
+              join(attachmentsBase, `p${(attachmentSequence += 1)}`),
+              attachments,
+              { image: connection.capabilities().image }
+            )
+            await connection.prompt(msg.text, blocks)
+          } catch (error) {
+            broadcast({ type: 'error', message: (error as Error).message })
+          }
+        })()
         return
       }
 

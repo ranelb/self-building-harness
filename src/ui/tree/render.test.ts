@@ -13,6 +13,7 @@ const ctx: RenderContext = {
     messages: [],
     items: [],
     changedFiles: [],
+    draftAttachments: [],
     capabilities: { image: false, audio: false, embeddedContext: false, fork: false },
     status: 'idle',
     draft: '',

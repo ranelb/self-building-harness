@@ -21,6 +21,7 @@ const withMessages = (count: number): RenderContext => {
       messages,
       items,
       changedFiles: [],
+      draftAttachments: [],
       capabilities: { image: false, audio: false, embeddedContext: false, fork: false },
       status: 'idle',
       draft: '',
@@ -146,8 +147,7 @@ describe('timeline items', () => {
   })
 })
 
-describe('changed files', () => {
-  it('hides when nothing changed and groups files per turn', () => {
+describe('changed files', () => {  it('hides when nothing changed and groups files per turn', () => {
     const base = withMessages(0)
     const hidden = renderTree({ type: 'changedFiles' }, base) as HTMLElement
     expect(hidden.style.display).toBe('none')
@@ -167,5 +167,36 @@ describe('changed files', () => {
     expect(el.textContent).toContain('a.ts')
     expect(el.textContent).toContain('b.ts:3')
     expect(el.textContent).toContain('turn 1')
+  })
+})
+
+describe('composer', () => {
+  const withStatus = (status: 'idle' | 'streaming', extra: Partial<RenderContext['host']> = {}) => {
+    const base = withMessages(0)
+    const actions: string[] = []
+    const ctx: RenderContext = {
+      ...base,
+      host: { ...base.host, status, ...extra },
+      dispatch: (action: string) => actions.push(action),
+    }
+    return { el: renderTree({ type: 'composer' }, ctx) as HTMLElement, actions }
+  }
+
+  it('shows Stop and cancels while streaming', () => {
+    const { el, actions } = withStatus('streaming')
+    const button = el.querySelector('button[data-send]') as HTMLButtonElement
+    expect(button.textContent).toBe('Stop')
+    button.click()
+    expect(actions).toEqual(['turn.cancel'])
+  })
+
+  it('shows Send and renders staged attachments', () => {
+    const { el, actions } = withStatus('idle', {
+      draftAttachments: [{ name: 'p.png', mimeType: 'image/png', data: 'AAA' }],
+    })
+    expect((el.querySelector('button[data-send]') as HTMLButtonElement).textContent).toBe('Send')
+    expect(el.querySelector('[data-attachments]')?.textContent).toContain('p.png')
+    ;(el.querySelector('button[data-send]') as HTMLButtonElement).click()
+    expect(actions).toEqual(['prompt.send'])
   })
 })

@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { once } from 'node:events'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import WebSocket from 'ws'
@@ -63,6 +63,36 @@ describe('core server', () => {
     await waitFor(() => seenB.some((m) => m.event?.type === 'turn.finished'))
     a.close()
     b.close()
+  })
+
+  it('persists a prompt attachment and completes the turn', async () => {
+    const stateDir = await mkdtemp(join(tmpdir(), 'sbh-state-'))
+    const previous = process.env.SBH_STATE_DIR
+    process.env.SBH_STATE_DIR = stateDir
+    try {
+      core = await startCore({ port: 0, backend: 'fake:happy' })
+      const ws = new WebSocket(`ws://127.0.0.1:${core.port}/ws`)
+      const messages: any[] = []
+      await once(ws, 'open')
+      ws.on('message', (data) => messages.push(JSON.parse(String(data))))
+      ws.send(
+        JSON.stringify({
+          type: 'prompt',
+          text: 'hi',
+          attachments: [{ name: 'p.png', mimeType: 'image/png', data: Buffer.from('PNG').toString('base64') }],
+        })
+      )
+      await waitFor(() => messages.some((m) => m.event?.type === 'turn.finished'))
+      const dir = join(stateDir, 'attachments', 'p1')
+      await waitFor(() => true)
+      const files = await readdir(dir).catch(() => [] as string[])
+      expect(files.some((name) => name.endsWith('p.png'))).toBe(true)
+      ws.close()
+    } finally {
+      if (previous === undefined) delete process.env.SBH_STATE_DIR
+      else process.env.SBH_STATE_DIR = previous
+      await rm(stateDir, { recursive: true, force: true })
+    }
   })
 
   it('serves the component directory', async () => {

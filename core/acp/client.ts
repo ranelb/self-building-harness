@@ -13,6 +13,7 @@
 import { spawn } from 'node:child_process'
 import type { AgentCapabilities, SessionConfigOption } from '../../shared/protocol.ts'
 import { normalizePermissionRequest, normalizeUpdate, type UiEvent } from '../events.ts'
+import type { AcpContentBlock } from '../attachments.ts'
 
 const PROTOCOL_VERSION = 1
 
@@ -25,7 +26,7 @@ export interface AcpSessionInfo {
 
 export interface AcpConnection {
   /** Send a prompt; resolves when the turn settles (finished or errored). */
-  prompt(text: string): Promise<void>
+  prompt(text: string, extra?: AcpContentBlock[]): Promise<void>
   /** Answer an inbound permission request by its UI-facing id. */
   respondPermission(requestId: string, decision: 'allow' | 'deny'): Promise<void>
   /** Subscribe to UI events. Multiple subscribers are allowed. */
@@ -304,14 +305,14 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
       listeners.push(cb)
     },
 
-    async prompt(text) {
+    async prompt(text, extra = []) {
       await ensureSession()
       if (handshakeError) return
       emit({ type: 'turn.started' })
       try {
         const res = await request('session/prompt', {
           sessionId,
-          prompt: [{ type: 'text', text }],
+          prompt: [{ type: 'text', text }, ...extra],
         })
         emit({ type: 'turn.finished', stopReason: res?.result?.stopReason ?? 'end_turn' })
       } catch (err) {

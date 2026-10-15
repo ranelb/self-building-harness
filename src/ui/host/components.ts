@@ -413,13 +413,95 @@ registerComponent({
 
 // --- composer --------------------------------------------------------------------
 
+const ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024
+
+type ComposerHost = HTMLElement & { __error?: string }
+
+/** Read dropped/picked/pasted files into base64 attachments, with a size guard. */
+const addFiles = (el: ComposerHost, files: File[]): void => {
+  el.__error = undefined
+  for (const file of files) {
+    if (file.size > ATTACHMENT_MAX_BYTES) {
+      el.__error = `${file.name} is too large (max 25 MB)`
+      continue
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = String(reader.result ?? '')
+      const comma = result.indexOf(',')
+      const live = getLive(el)
+      if (!live) return
+      live.ctx.dispatch('attachment.add', {
+        attachment: {
+          name: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          data: comma >= 0 ? result.slice(comma + 1) : '',
+        },
+      })
+    }
+    reader.readAsDataURL(file)
+  }
+}
+
+const paintAttachments = (tray: HTMLElement, attachments: Attachment[], el: ComposerHost): void => {
+  if (attachments.length === 0) {
+    tray.style.display = 'none'
+    tray.replaceChildren()
+    return
+  }
+  tray.style.display = 'flex'
+  tray.replaceChildren()
+  attachments.forEach((attachment, index) => {
+    const chip = attachmentChip(attachment)
+    const remove = document.createElement('button')
+    remove.textContent = '\u00d7'
+    remove.title = 'Remove'
+    remove.style.cssText =
+      'border:none;background:transparent;color:var(--sbh-color-text-muted);cursor:pointer;font-size:14px;line-height:1'
+    remove.addEventListener('click', () => {
+      const live = getLive(el)
+      if (live) live.ctx.dispatch('attachment.remove', { index })
+    })
+    chip.appendChild(remove)
+    tray.appendChild(chip)
+  })
+}
+
 registerComponent({
   name: 'composer',
   create() {
-    const el = document.createElement('div')
+    const el = document.createElement('div') as ComposerHost
     el.setAttribute('data-atom', 'composer')
     el.style.display = 'flex'
-    el.style.gap = 'var(--sbh-space-sm)'
+    el.style.flexDirection = 'column'
+    el.style.gap = 'var(--sbh-space-xs)'
+
+    const tray = document.createElement('div')
+    tray.setAttribute('data-attachments', '')
+    tray.style.cssText = 'display:none;flex-wrap:wrap;gap:var(--sbh-space-xs)'
+
+    const error = document.createElement('div')
+    error.setAttribute('data-composer-error', '')
+    error.style.cssText = 'display:none;color:var(--sbh-color-danger);font-size:var(--sbh-font-size-sm)'
+
+    const row = document.createElement('div')
+    row.style.cssText = 'display:flex;gap:var(--sbh-space-sm);align-items:center'
+
+    const picker = document.createElement('input')
+    picker.type = 'file'
+    picker.multiple = true
+    picker.style.display = 'none'
+    picker.addEventListener('change', () => {
+      addFiles(el, Array.from(picker.files ?? []))
+      picker.value = ''
+    })
+
+    const attach = document.createElement('button')
+    attach.setAttribute('data-attach', '')
+    attach.textContent = '\u{1F4CE}'
+    attach.title = 'Attach files'
+    controlStyle(attach)
+    attach.addEventListener('click', () => picker.click())
 
     const input = document.createElement('input')
     input.setAttribute('data-atom', 'input')
@@ -432,30 +514,67 @@ registerComponent({
       if (live) live.ctx.dispatch('prompt.draft', { value: input.value })
     })
     input.addEventListener('keydown', (event) => {
-      if ((event as KeyboardEvent).key === 'Enter') {
-        const live = getLive(el)
-        if (live) live.ctx.dispatch('prompt.send')
+      const key = (event as KeyboardEvent).key
+      const live = getLive(el)
+      if (!live) return
+      if (key === 'Enter') live.ctx.dispatch('prompt.send')
+      else if (key === 'Escape' && live.ctx.host.status === 'streaming') live.ctx.dispatch('turn.cancel')
+    })
+    input.addEventListener('paste', (event) => {
+      const items = (event as ClipboardEvent).clipboardData?.items
+      if (!items) return
+      const files: File[] = []
+      for (const item of Array.from(items)) {
+        if (item.kind !== 'file') continue
+        const file = item.getAsFile()
+        if (file) files.push(file)
+      }
+      if (files.length > 0) {
+        event.preventDefault()
+        addFiles(el, files)
       }
     })
 
+    el.addEventListener('dragover', (event) => event.preventDefault())
+    el.addEventListener('drop', (event) => {
+      event.preventDefault()
+      const files = Array.from((event as DragEvent).dataTransfer?.files ?? [])
+      if (files.length > 0) addFiles(el, files)
+    })
+
     const send = document.createElement('button')
+    send.setAttribute('data-send', '')
     send.textContent = 'Send'
     controlStyle(send)
     send.addEventListener('click', () => {
       const live = getLive(el)
-      if (live) live.ctx.dispatch('prompt.send')
+      if (!live) return
+      live.ctx.dispatch(live.ctx.host.status === 'streaming' ? 'turn.cancel' : 'prompt.send')
     })
 
-    el.append(input, send)
+    row.append(attach, input, send)
+    el.append(tray, error, row, picker)
     return el
   },
   update(el, _node, ctx) {
     setLive(el, { type: 'composer' }, ctx)
-    const element = el as HTMLElement
-    const input = element.querySelector('input') as HTMLInputElement | null
+    const element = el as ComposerHost
+    const input = element.querySelector('input[data-atom="input"]') as HTMLInputElement | null
     // Same rule as the input atom: never overwrite what is being typed.
     if (input && document.activeElement !== input && input.value !== ctx.host.draft) {
       input.value = ctx.host.draft
+    }
+
+    const send = element.querySelector('button[data-send]') as HTMLButtonElement | null
+    if (send) send.textContent = ctx.host.status === 'streaming' ? 'Stop' : 'Send'
+
+    const tray = element.querySelector('[data-attachments]') as HTMLElement | null
+    if (tray) paintAttachments(tray, ctx.host.draftAttachments, element)
+
+    const error = element.querySelector('[data-composer-error]') as HTMLElement | null
+    if (error) {
+      error.style.display = element.__error ? 'block' : 'none'
+      error.textContent = element.__error ?? ''
     }
   },
 })

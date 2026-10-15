@@ -15,6 +15,7 @@ import {
 } from './ui/state/transcript.ts'
 import { getLive, renderInto, setLive, type HostState, type RenderContext, type SessionSummary, type UiNode } from './ui/tree/render.ts'
 import { DEFAULT_LAYOUT } from '../shared/layout.ts'
+import type { Attachment } from '../shared/protocol.ts'
 
 const DEFAULT_CORE_URL =
   (globalThis as { __SBH_CORE_URL__?: string }).__SBH_CORE_URL__ ??
@@ -56,6 +57,7 @@ export interface AppProps {
 export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
   const [transcript, setTranscript] = useState<Transcript>(empty)
   const [draft, setDraft] = useState('')
+  const [attachments, setAttachments] = useState<Attachment[]>([])
   const [components, setComponents] = useState<LoadReport | null>(null)
   const [tokens, setTokens] = useState<Record<string, string>>({})
   const [layout, setLayout] = useState<UiNode>(DEFAULT_LAYOUT)
@@ -129,6 +131,7 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
         })
         return
       }
+      if (event.type === 'session.reset') setAttachments([])
       setTranscript((previous) => applyEvent(previous, event))
     })
     connection.onState((key, value) => setData((previous) => ({ ...previous, [key]: value })))
@@ -153,6 +156,7 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
     messages: toMessages(transcript),
     items: transcript.items,
     changedFiles: transcript.changedFiles,
+    draftAttachments: attachments,
     capabilities: transcript.capabilities,
     status: transcript.status,
     error: transcript.error,
@@ -171,11 +175,29 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
     bind: (el: Node, node: UiNode) => setLive(el, node, context),
     latest: (el: Node) => getLive(el),
     dispatch(action, payload) {
-      const props = payload as { value?: unknown; requestId?: unknown; id?: unknown } | undefined
+      const props = payload as
+        | { value?: unknown; requestId?: unknown; id?: unknown; attachment?: Attachment; index?: unknown }
+        | undefined
 
       switch (action) {
         case 'prompt.draft':
           setDraft(String(props?.value ?? ''))
+          return
+
+        case 'attachment.add': {
+          const attachment = props?.attachment
+          if (attachment) setAttachments((previous) => [...previous, attachment])
+          return
+        }
+
+        case 'attachment.remove': {
+          const index = Number(props?.index)
+          setAttachments((previous) => previous.filter((_, at) => at !== index))
+          return
+        }
+
+        case 'turn.cancel':
+          stream.current?.send({ type: 'cancel' })
           return
 
         case 'prompt.send': {
@@ -183,11 +205,17 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
           // state can lag a keystroke, which silently truncated sent prompts.
           const live = host.current?.querySelector<HTMLInputElement>('input[data-atom="input"]')
           const text = (live?.value ?? draft).trim()
-          if (!text) return
-          setTranscript((previous) => withUserMessage(previous, text))
-          stream.current?.send({ type: 'prompt', text })
+          const outgoing = attachments
+          if (!text && outgoing.length === 0) return
+          setTranscript((previous) => withUserMessage(previous, text, outgoing))
+          stream.current?.send({
+            type: 'prompt',
+            text,
+            ...(outgoing.length > 0 ? { attachments: outgoing } : {}),
+          })
           if (live) live.value = ''
           setDraft('')
+          setAttachments([])
           return
         }
 

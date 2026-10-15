@@ -96,6 +96,8 @@ export interface HostState {
   items: TimelineItem[]
   /** Files edited, grouped per turn. */
   changedFiles: ChangedFilesGroup[]
+  /** Attachments staged in the composer, not yet sent. */
+  draftAttachments: Attachment[]
   /** What the agent reported it can do (image, fork, …). */
   capabilities: AgentCapabilities
   status: 'idle' | 'streaming' | 'error'
