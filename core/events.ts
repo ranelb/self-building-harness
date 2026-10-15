@@ -17,6 +17,19 @@ const textOf = (content: unknown): string | null => {
   return content.type === 'text' && typeof content.text === 'string' ? content.text : null
 }
 
+/** Read ACP `ToolCallLocation[]`, dropping anything malformed. */
+const readLocations = (raw: unknown): { path: string; line?: number }[] => {
+  if (!Array.isArray(raw)) return []
+  const out: { path: string; line?: number }[] = []
+  for (const entry of raw) {
+    if (!isRecord(entry) || typeof entry.path !== 'string') continue
+    out.push(
+      typeof entry.line === 'number' ? { path: entry.path, line: entry.line } : { path: entry.path }
+    )
+  }
+  return out
+}
+
 /**
  * Map one ACP `session/update` payload to zero or more UI events.
  *
@@ -52,7 +65,10 @@ export function normalizeUpdate(update: unknown): UiEvent[] {
       return update.cost === undefined ? [event] : [{ ...event, cost: update.cost }]
     }
 
-    case 'tool_call': {
+    case 'tool_call':
+    case 'tool_call_update': {
+      // `tool_call_update` carries the completion (status, locations, content) and
+      // often no title; dropping it left every tool card stuck on `pending`.
       if (typeof update.toolCallId !== 'string') return []
       const title =
         typeof update.title === 'string'
@@ -60,8 +76,17 @@ export function normalizeUpdate(update: unknown): UiEvent[] {
           : typeof update.name === 'string'
             ? update.name
             : 'tool'
-      const event: UiEvent = { type: 'tool', toolCallId: update.toolCallId, title }
-      return typeof update.status === 'string' ? [{ ...event, status: update.status }] : [event]
+      const event: Extract<UiEvent, { type: 'tool' }> = {
+        type: 'tool',
+        toolCallId: update.toolCallId,
+        title,
+      }
+      if (typeof update.status === 'string') event.status = update.status
+      if (typeof update.kind === 'string') event.kind = update.kind
+      const locations = readLocations(update.locations)
+      if (locations.length > 0) event.locations = locations
+      if (update.content !== undefined) event.content = update.content
+      return [event]
     }
 
     default:

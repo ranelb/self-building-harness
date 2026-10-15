@@ -28,6 +28,56 @@ describe('normalizeUpdate', () => {
     ])
   })
 
+  it('forwards kind, locations and content on a tool call', () => {
+    expect(
+      normalizeUpdate({
+        sessionUpdate: 'tool_call',
+        toolCallId: 't2',
+        title: 'edit',
+        kind: 'edit',
+        status: 'in_progress',
+        locations: [{ path: 'b.ts' }],
+        content: [{ type: 'diff', path: 'b.ts', newText: 'x' }],
+      })
+    ).toEqual([
+      {
+        type: 'tool',
+        toolCallId: 't2',
+        title: 'edit',
+        kind: 'edit',
+        status: 'in_progress',
+        locations: [{ path: 'b.ts' }],
+        content: [{ type: 'diff', path: 'b.ts', newText: 'x' }],
+      },
+    ])
+  })
+
+  it('maps a tool_call_update to a tool event, so a call can complete', () => {
+    expect(
+      normalizeUpdate({
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 't1',
+        status: 'completed',
+        locations: [{ path: '/a.ts', line: 3 }],
+      })
+    ).toEqual([
+      {
+        type: 'tool',
+        toolCallId: 't1',
+        title: 'tool',
+        status: 'completed',
+        locations: [{ path: '/a.ts', line: 3 }],
+      },
+    ])
+  })
+
+  it('drops a tool update with no id, and ignores malformed locations', () => {
+    expect(normalizeUpdate({ sessionUpdate: 'tool_call_update', title: 'x' })).toEqual([])
+    expect(
+      normalizeUpdate({ sessionUpdate: 'tool_call', toolCallId: 't3', locations: 'nope' })
+    ).toEqual([{ type: 'tool', toolCallId: 't3', title: 'tool' }])
+  })
+
   it('maps a usage update to a usage event', () => {
     // Without this the context meter looks impossible to build: ACP carries the
     // data, and the normalizer was dropping it on the floor.

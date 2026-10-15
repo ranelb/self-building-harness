@@ -23,7 +23,18 @@ export type UiEvent =
   | { type: 'chunk'; text: string }
   | { type: 'user.chunk'; text: string }
   | { type: 'thought'; text: string }
-  | { type: 'tool'; toolCallId: string; title: string; status?: string }
+  | {
+      type: 'tool'
+      toolCallId: string
+      title: string
+      status?: string
+      /** ACP ToolKind: `edit`, `read`, `execute`, … */
+      kind?: string
+      /** Files the call touched, so the UI can list what changed. */
+      locations?: { path: string; line?: number }[]
+      /** ACP ToolCallContent (may carry a diff). */
+      content?: unknown
+    }
   | {
       type: 'permission.requested'
       requestId: string
