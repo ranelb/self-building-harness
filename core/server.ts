@@ -7,18 +7,18 @@ import { createServer } from 'node:http'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { WebSocketServer, WebSocket } from 'ws'
-import { connectAcp, type AcpConnection } from './acp/client.ts'
-import { resolveBackend } from './backends/registry.ts'
+import { connectAcp, type AcpConnection, type AcpSessionInfo } from './acp/client.ts'
+import { BACKEND_IDS, resolveBackend } from './backends/registry.ts'
 import { ensureComponentsDir, listComponents, readComponent } from './components.ts'
 import { ensureLayoutFile, readLayout } from './layout.ts'
-import { listSessions, readSession } from './sessions.ts'
+import { listSessions, readSession, type SessionSummary } from './sessions.ts'
 import { ensureThemeFile, readTheme } from './theme.ts'
 import { sampleSystem } from './system.ts'
 import { ensureRepo, history, revertLast, snapshot } from './versioning.ts'
 import { watchPaths } from './watch.ts'
 import { DENY_BY_DEFAULT, respondToPermission, type PermissionPolicy } from './acp/permissions.ts'
 import { isOriginAllowed, resolveAllowedOrigins } from './origin.ts'
-import type { UiEvent } from './events.ts'
+import type { SessionConfigOption, UiEvent } from '../shared/protocol.ts'
 
 /**
  * The scripted fixture (test seam).
@@ -64,7 +64,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     throw new Error(`SBH core refuses to bind anything but loopback (got ${host})`)
   }
 
-  const backend = options.backend ?? 'pi'
+  let backendId = options.backend ?? 'pi'
   const cwd = options.cwd ?? process.cwd()
   const policy = options.policy ?? DENY_BY_DEFAULT
   const configDir = options.configDir ?? process.env.SBH_CONFIG_DIR ?? join(homedir(), '.config', 'sbh')
@@ -79,6 +79,10 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
 
   const clients = new Set<WebSocket>()
   let conn: AcpConnection | null = null
+  /** Set when the next connection should resume a session rather than create one. */
+  let resumeTarget: { sessionId: string; cwd: string } | null = null
+  /** The latest session config options, so a new client can be told the model. */
+  let configOptions: SessionConfigOption[] = []
 
   const broadcast = (event: UiEvent) => sendToAll({ type: 'event', event })
 
@@ -89,26 +93,111 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     }
   }
 
-  const agentSpec = (() => {
-    if (backend.startsWith('fake:')) {
-      return { command: process.execPath, args: [FIXTURE, backend.slice('fake:'.length)], cwd }
+  const backendSpec = (id: string) => {
+    if (id.startsWith('fake:')) {
+      return { command: process.execPath, args: [FIXTURE, id.slice('fake:'.length)], cwd }
     }
-    return { ...resolveBackend(backend), cwd }
-  })()
+    return { ...resolveBackend(id), cwd }
+  }
+
+  const label = (id: string) => id.charAt(0).toUpperCase() + id.slice(1)
+  const harnessState = () => ({
+    value: backendId,
+    options: BACKEND_IDS.map((id) => ({ value: id, label: label(id) })),
+  })
+  const modelState = () => {
+    const model = configOptions.find((option) => option.category === 'model')
+    return model ? { value: model.currentValue, options: model.options } : { value: '', options: [] }
+  }
 
   const ensureConnection = (): AcpConnection => {
     if (conn) return conn
-    const created = connectAcp(agentSpec)
+    const created = connectAcp({
+      ...backendSpec(backendId),
+      ...(resumeTarget ? { resume: resumeTarget } : {}),
+    })
+    resumeTarget = null
     created.onEvent((event) => {
       if (event.type === 'permission.requested' && clients.size === 0) {
         // The gate is still answered — by the policy, not by silence.
         const decided = policy({ requestId: event.requestId, title: event.title })
         void respondToPermission(created, event.requestId, decided === 'allow' ? 'allow' : 'deny')
       }
+      if (event.type === 'config') {
+        configOptions = event.options
+        sendToAll({ type: 'state', key: 'model', value: modelState() })
+      }
       broadcast(event)
     })
     conn = created
     return created
+  }
+
+  /** Switch backends by reconnecting; nothing is spawned until it is needed. */
+  const switchBackend = (id: string) => {
+    // Validate before tearing anything down: an unknown id must not kill the app.
+    if (!id.startsWith('fake:')) {
+      try {
+        resolveBackend(id)
+      } catch {
+        return
+      }
+    }
+    if (id === backendId && conn) return
+    conn?.close()
+    conn = null
+    resumeTarget = null
+    configOptions = []
+    backendId = id
+    sendToAll({ type: 'state', key: 'harness', value: harnessState() })
+    sendToAll({ type: 'state', key: 'model', value: modelState() })
+  }
+
+  /**
+   * Attach the agent to an existing session. A fresh connection loads it, and the
+   * agent's replayed `session/update`s rebuild the transcript for every client.
+   */
+  const resumeSession = (id: string, sessionCwd: string) => {
+    conn?.close()
+    conn = null
+    resumeTarget = { sessionId: id, cwd: sessionCwd || cwd }
+    void ensureConnection().open()
+  }
+
+  const toUiSession = (session: SessionSummary) => ({
+    id: session.id,
+    cwd: session.cwd,
+    title: session.title || '(untitled)',
+    startedAt: session.startedAt,
+    updatedAt: session.updatedAt,
+  })
+
+  /**
+   * The agent's own view of its session store. Returns null when it cannot list
+   * (an older agent), so the caller can fall back to reading pi's files.
+   */
+  const acpSessions = async (): Promise<SessionSummary[] | null> => {
+    try {
+      const connection = ensureConnection()
+      const all: AcpSessionInfo[] = []
+      let cursor: string | undefined
+      for (let page = 0; page < 5; page += 1) {
+        const result = await connection.list(cursor)
+        all.push(...result.sessions)
+        if (!result.nextCursor) break
+        cursor = result.nextCursor
+      }
+      return all.map((session) => ({
+        id: session.sessionId,
+        path: '',
+        cwd: session.cwd,
+        startedAt: session.updatedAt,
+        updatedAt: session.updatedAt,
+        title: session.title,
+      }))
+    } catch {
+      return null
+    }
   }
 
   const http = createServer((req, res) => {
@@ -179,12 +268,25 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
       return
     }
 
+    if (req.method === 'GET' && url === '/backends') {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(
+        JSON.stringify({
+          backends: BACKEND_IDS.map((id) => ({ id, label: label(id) })),
+          value: backendId,
+        })
+      )
+      return
+    }
+
     if (req.method === 'GET' && url === '/sessions') {
-      void listSessions(sessionsRoot).then((sessions) => {
+      void (async () => {
+        // The agent's own store first (also the only one goose has); pi's files are
+        // the fallback for an agent that cannot list.
+        const sessions = (await acpSessions()) ?? (await listSessions(sessionsRoot))
         res.writeHead(200, { 'content-type': 'application/json' })
-        // `path` stays in the core: the browser has no use for a local path.
-        res.end(JSON.stringify({ sessions: sessions.map(({ path: _path, ...rest }) => rest) }))
-      })
+        res.end(JSON.stringify({ sessions: sessions.map(toUiSession) }))
+      })()
       return
     }
 
@@ -240,6 +342,9 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
 
   wss.on('connection', (socket) => {
     clients.add(socket)
+    // A fresh client needs the current pickers before it asks anything.
+    socket.send(JSON.stringify({ type: 'state', key: 'harness', value: harnessState() }))
+    socket.send(JSON.stringify({ type: 'state', key: 'model', value: modelState() }))
 
     socket.on('message', (raw) => {
       let msg: any
@@ -258,6 +363,21 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
       if (msg.type === 'permission' && typeof msg.requestId === 'string') {
         const decision = msg.decision === 'allow' ? 'allow' : 'deny'
         void respondToPermission(ensureConnection(), msg.requestId, decision)
+        return
+      }
+
+      if (msg.type === 'backend' && typeof msg.id === 'string') {
+        switchBackend(msg.id)
+        return
+      }
+
+      if (msg.type === 'model' && typeof msg.id === 'string') {
+        void ensureConnection().setConfigOption('model', msg.id)
+        return
+      }
+
+      if (msg.type === 'session.resume' && typeof msg.id === 'string') {
+        resumeSession(msg.id, typeof msg.cwd === 'string' ? msg.cwd : '')
       }
     })
 

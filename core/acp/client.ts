@@ -30,6 +30,8 @@ export interface AcpConnection {
   respondPermission(requestId: string, decision: 'allow' | 'deny'): Promise<void>
   /** Subscribe to UI events. Multiple subscribers are allowed. */
   onEvent(cb: (event: UiEvent) => void): void
+  /** Ensure the session exists (create, or load a resume target). */
+  open(): Promise<void>
   /** List the agent's saved sessions (one page). Does not create a session. */
   list(cursor?: string): Promise<{ sessions: AcpSessionInfo[]; nextCursor: string | null }>
   /** Set a session config option (the model picker uses this). */
@@ -299,6 +301,10 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
         updatedAt: String(entry?.updatedAt ?? ''),
       }))
       return { sessions, nextCursor: res?.result?.nextCursor ?? null }
+    },
+
+    async open() {
+      await ensureSession()
     },
 
     async setConfigOption(configId, value) {

@@ -130,3 +130,74 @@ describe('origin guard', () => {
     ws.close()
   })
 })
+
+describe('pickers and resume', () => {
+  const connect = async () => {
+    const ws = new WebSocket(`ws://127.0.0.1:${core!.port}/ws`)
+    const messages: any[] = []
+    ws.on('message', (data) => messages.push(JSON.parse(String(data))))
+    await once(ws, 'open')
+    return { ws, messages }
+  }
+
+  it('lists the backends and the active one', async () => {
+    core = await startCore({ port: 0, backend: 'fake:happy' })
+    const body = (await fetch(`http://127.0.0.1:${core.port}/backends`).then((r) => r.json())) as any
+    expect(body.backends.map((b: any) => b.id)).toEqual(['pi', 'goose'])
+    expect(body.value).toBe('fake:happy')
+  })
+
+  it('lists sessions from the agent, not the files', async () => {
+    core = await startCore({ port: 0, backend: 'fake:happy' })
+    const body = (await fetch(`http://127.0.0.1:${core.port}/sessions`).then((r) => r.json())) as any
+    expect(body.sessions.map((s: any) => s.id)).toEqual(['saved-1', 'saved-2'])
+    expect(body.sessions[0].title).toBe('First chat')
+  })
+
+  it('reports the model and changes it', async () => {
+    core = await startCore({ port: 0, backend: 'fake:happy' })
+    const { ws, messages } = await connect()
+    ws.send(JSON.stringify({ type: 'model', id: 'model-b' }))
+    await waitFor(() =>
+      messages.some((m) => m.type === 'state' && m.key === 'model' && m.value?.value === 'model-b')
+    )
+    ws.close()
+  })
+
+  it('switches backend and streams from the new one', async () => {
+    core = await startCore({ port: 0, backend: 'fake:happy' })
+    const { ws, messages } = await connect()
+    ws.send(JSON.stringify({ type: 'backend', id: 'fake:unknown-update' }))
+    await waitFor(() =>
+      messages.some((m) => m.type === 'state' && m.key === 'harness' && m.value?.value === 'fake:unknown-update')
+    )
+    ws.send(JSON.stringify({ type: 'prompt', text: 'hi' }))
+    await waitFor(() =>
+      messages.some((m) => m.type === 'event' && m.event?.type === 'chunk' && m.event.text === 'known')
+    )
+    ws.close()
+  })
+
+  it('rejects an unknown backend without tearing down the app', async () => {
+    core = await startCore({ port: 0, backend: 'fake:happy' })
+    const { ws, messages } = await connect()
+    ws.send(JSON.stringify({ type: 'backend', id: 'nope' }))
+    // No harness state change; the previous backend still answers.
+    ws.send(JSON.stringify({ type: 'prompt', text: 'hi' }))
+    await waitFor(() => messages.some((m) => m.event?.type === 'turn.finished'))
+    ws.close()
+  })
+
+  it('resumes a session and replays it as events', async () => {
+    core = await startCore({ port: 0, backend: 'fake:happy' })
+    const { ws, messages } = await connect()
+    ws.send(JSON.stringify({ type: 'session.resume', id: 'saved-1', cwd: process.cwd() }))
+    await waitFor(() =>
+      messages.some((m) => m.type === 'event' && m.event?.type === 'user.chunk' && m.event.text === 'earlier question')
+    )
+    await waitFor(() =>
+      messages.some((m) => m.type === 'event' && m.event?.type === 'chunk' && m.event.text === 'earlier answer')
+    )
+    ws.close()
+  })
+})
