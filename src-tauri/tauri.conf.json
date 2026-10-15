@@ -18,11 +18,14 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "resources": ["binaries/sbh-core"],
+    "resources": [
+      "binaries/sbh-core"
+    ],
     "linux": {
       "deb": {
         "files": {
-          "/etc/sbh/capabilities.toml": "../examples/capabilities.toml"
+          "/etc/sbh/capabilities.toml": "../examples/capabilities.toml",
+          "/usr/bin/sbh-policy": "../packaging/sbh-policy"
         }
       }
     },

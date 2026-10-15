@@ -291,6 +291,20 @@ click-to-allow), and a scoped allow with no readable subject is a deny. Decision
 are appended to `~/.local/state/sbh/audit.log`; recent denials also show in the
 notices bar.
 
-Enable it with root: `pkexec install -Dm644 examples/capabilities.toml
-/etc/sbh/capabilities.toml` after editing `enabled = true`. To judge a change
-without root, write the user-path file and restart the core.
+**`sbh-policy` is the writer** (the deb installs it on `PATH`). It reuses the core's
+parser, so it cannot write a manifest the core would reject, and it edits the file
+textually so your comments survive. **SBH never elevates itself** — run the CLI
+however you elevate:
+
+```bash
+sbh-policy list                       # reads; no root needed
+sbh-policy check
+pkexec sbh-policy grant shell --commands 'git *, npm run *'
+pkexec sbh-policy grant fs.read --paths '~/Projects/**'
+pkexec sbh-policy enable
+```
+
+`pkexec` is one example, not a dependency: substitute `sudo`, `doas`, or a root
+shell. `--file` (or `SBH_MANIFEST`) points it at another manifest for development;
+in a checkout use `npm run policy -- list`. Hand-editing works too — the CLI is a
+convenience, not the only path.

@@ -1,0 +1,6 @@
+#!/bin/sh
+# sbh-policy — the operator CLI for the SBH capability manifest.
+#
+# It delegates to the bundled core (`sbh-core policy …`). SBH itself never
+# elevates; run this however you elevate — pkexec, sudo, doas, a root shell.
+exec /usr/lib/SBH/binaries/sbh-core policy "$@"

@@ -1102,3 +1102,24 @@ denied one was refused, the turn continued, and `policy denied · shell · ls -l
 appeared. The audit log held all three sources (`manifest`, `ui`, `unattended`).
 
 Left: the pkexec switch UX (a Hub/Ryoku page to flip `enabled` and edit grants).
+
+## sbh-policy: the writer, decoupled from elevation (2026-10-15)
+
+ran pushed back on pkexec, correctly. The app should never elevate: that hardcodes
+an auth stack (polkit/this desktop), breaks headless and mobile, and plants a
+permanent privilege-escalation call site in a user process. So the switch UX became
+a CLI, not an in-app button.
+
+`core/policy.ts` (`sbh-core policy …`, npm `policy`) — `list`, `path`, `check`,
+`enable`, `disable`, `grant`, `revoke`. It reuses `capabilities.ts` to parse and
+**validate before writing**, and edits the file textually (sections replaced in
+place) so hand-written comments survive. SBH names no elevator; you run it under
+pkexec, sudo, doas, or a root shell. `--file` / `SBH_MANIFEST` for development.
+
+The `.deb` now installs two custom files (`bundle.linux.deb.files`, dest → source):
+a disabled `/etc/sbh/capabilities.toml` and an executable `/usr/bin/sbh-policy`
+wrapper that execs `sbh-core policy`. Verified in the built deb (modes 0644 / 0755).
+
+Trap: a second entry point in `core/policy.ts` (an `import.meta.url === argv[1]`
+guard) double-fired inside the bun bundle, where both point at the virtual entry,
+and hijacked the `policy` subcommand. One entry point only; `index.ts` dispatches.

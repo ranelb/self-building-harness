@@ -14,8 +14,8 @@ declarative tree the agent writes as files. "Self-building harness."
 
 ## State
 
-52 commits · **174 tests / 24 files** · `tsc -b` clean · `git status` clean.
-`core`+`shared` ~2.1k · `src` ~1.6k lines of source. A `.deb` builds and runs.
+53 commits · **182 tests / 25 files** · `tsc -b` clean · `git status` clean.
+`core`+`shared` ~2.3k · `src` ~1.6k lines of source. A `.deb` builds and runs.
 
 ```
 core/      the process: ACP, permissions, WS server, theme/layout/components,
@@ -106,8 +106,10 @@ system-wide, and there is no rpm/AppImage pass or an update story.
   loads a root-owned TOML manifest (user fallback for dev), classifies ACP tool
   calls, evaluates fail-closed, and audits. With it on the core decides and the UI
   is told (`permission.resolved`); off, the agent-authored card answers as before.
-  The `.deb` installs a disabled `/etc/sbh/capabilities.toml`. Design:
-  `specs/2026-10-15-capability-manifest-design.md`. Left: the pkexec switch UX.
+  The `.deb` installs a disabled `/etc/sbh/capabilities.toml` and `sbh-policy`, the
+  operator CLI that is the writer (SBH never elevates; you run it under pkexec,
+  sudo, doas, or a root shell). Design: `specs/2026-10-15-capability-manifest-design.md`.
+  Left: an in-app read-only view of grants and the audit tail.
 - **`CATALOG.md`** — the design's generated inventory of components + contract in the
   UI directory, so an agent can read what exists. Does not exist.
 - **Published docs** a harness can `web_fetch`. Does not exist; `AGENTS.md` and this
