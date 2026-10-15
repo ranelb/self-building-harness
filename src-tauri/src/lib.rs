@@ -20,24 +20,40 @@ fn parse_core_url(line: &str) -> Option<String> {
   Some(rest[..end].to_string())
 }
 
-fn spawn_core() -> (String, Child) {
-  // Dev: the repo root is the manifest's parent. A packaged app ships the core as
-  // a sidecar and resolves it from the resource dir instead; that is deferred.
+/// Resolve how to launch the core: a packaged sidecar if present, else Node in dev.
+fn core_command(app: &tauri::AppHandle) -> (String, Vec<String>) {
+  if let Ok(binary) = std::env::var("SBH_CORE_BIN") {
+    return (binary, Vec::new());
+  }
+  // A packaged build ships the compiled core as a resource (a standalone binary,
+  // no Node runtime needed).
+  if let Ok(dir) = app.path().resource_dir() {
+    let candidate = dir.join("binaries").join("sbh-core");
+    if candidate.exists() {
+      return (candidate.to_string_lossy().into_owned(), Vec::new());
+    }
+  }
+  // Development: run the TypeScript core with the system Node.
   let root =
     std::env::var("SBH_ROOT").unwrap_or_else(|_| format!("{}/..", env!("CARGO_MANIFEST_DIR")));
-  let script = format!("{root}/core/index.ts");
   let node = std::env::var("SBH_NODE").unwrap_or_else(|_| "node".into());
+  let args = vec![
+    "--experimental-strip-types".to_string(),
+    format!("{root}/core/index.ts"),
+  ];
+  (node, args)
+}
 
-  let mut child = Command::new(&node)
-    .arg("--experimental-strip-types")
-    .arg(&script)
+fn spawn_core(command: String, args: Vec<String>) -> (String, Child) {
+  let mut child = Command::new(&command)
+    .args(&args)
     // 0 asks the OS for a free port; the core prints the one it got.
     .env("SBH_PORT", "0")
     .stdin(Stdio::null())
     .stdout(Stdio::piped())
     .stderr(Stdio::inherit())
     .spawn()
-    .unwrap_or_else(|error| panic!("failed to spawn the sbh core via {node}: {error}"));
+    .unwrap_or_else(|error| panic!("failed to spawn the sbh core via {command}: {error}"));
 
   let stdout = child.stdout.take().expect("core stdout was piped");
   let mut reader = BufReader::new(stdout);
@@ -89,7 +105,8 @@ pub fn run() {
         )?;
       }
 
-      let (core_url, child) = spawn_core();
+      let (command, args) = core_command(app.handle());
+      let (core_url, child) = spawn_core(command, args);
       app.manage(CoreProcess(Mutex::new(Some(child))));
 
       // Injected before the page's own scripts, so `App` reads it at module load

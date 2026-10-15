@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && npm run build:core",
+    "build:core": "mkdir -p src-tauri/binaries && bun build --compile --target=bun-linux-x64 core/index.ts --outfile src-tauri/binaries/sbh-core",
     "preview": "vite preview",
     "test": "vitest run",
     "core": "node --experimental-strip-types core/index.ts"
