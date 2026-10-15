@@ -502,6 +502,11 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
         return
       }
 
+      if (msg.type === 'cancel') {
+        void ensureConnection().cancel()
+        return
+      }
+
       if (msg.type === 'permission' && typeof msg.requestId === 'string') {
         const decision = msg.decision === 'allow' ? 'allow' : 'deny'
         void respondToPermission(ensureConnection(), msg.requestId, decision)

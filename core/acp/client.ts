@@ -36,6 +36,8 @@ export interface AcpConnection {
   list(cursor?: string): Promise<{ sessions: AcpSessionInfo[]; nextCursor: string | null }>
   /** Set a session config option (the model picker uses this). */
   setConfigOption(configId: string, value: string): Promise<void>
+  /** Cancel the in-flight turn (a `session/cancel` notification). */
+  cancel(): Promise<void>
   close(): void
 }
 
@@ -317,6 +319,13 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
       if (handshakeError) return
       const res = await request('session/set_config_option', { sessionId, configId, value })
       emitConfig(res?.result?.configOptions)
+    },
+
+    async cancel() {
+      // A notification, not a request: ACP answers the original session/prompt
+      // with stopReason `cancelled`. A no-op before the session exists.
+      if (!sessionId) return
+      send({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId } })
     },
 
     async respondPermission(requestId, decision) {

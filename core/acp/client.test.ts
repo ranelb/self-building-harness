@@ -129,6 +129,20 @@ describe('connectAcp', () => {
     expect(events.filter((e) => e.type === 'chunk').map((e) => (e as { text: string }).text).join('')).toBe('a🎉b')
     conn.close()
   })
+
+  it('cancel stops the turn (session/cancel)', async () => {
+    const conn = connectAcp(fake('cancel'))
+    const events = collect(conn)
+    const turn = conn.prompt('hello')
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    await conn.cancel()
+    await turn
+    const finished = events.find(
+      (e): e is Extract<UiEvent, { type: 'turn.finished' }> => e.type === 'turn.finished'
+    )
+    expect(finished?.stopReason).toBe('cancelled')
+    conn.close()
+  })
 })
 
 describe('closing', () => {

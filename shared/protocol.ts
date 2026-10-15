@@ -77,6 +77,7 @@ export interface Attachment {
 /** Client -> core. */
 export type ClientToCore =
   | { type: 'prompt'; text: string; attachments?: Attachment[] }
+  | { type: 'cancel' }
   | { type: 'permission'; requestId: string; decision: 'allow' | 'deny' }
   /** Switch the agent backend; the core reconnects. */
   | { type: 'backend'; id: string }

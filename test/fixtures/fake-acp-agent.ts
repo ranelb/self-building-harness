@@ -19,6 +19,7 @@ export const SCENARIOS = [
   'usage',
   'crash-mid-turn',
   'split-multibyte',
+  'cancel',
 ] as const
 
 export type Scenario = (typeof SCENARIOS)[number]
@@ -144,6 +145,8 @@ async function serve(scenario: Scenario): Promise<void> {
   let nextId = 100
   let model: string = FAKE_MODELS[0]
   const pending = new Map<number, (msg: any) => void>()
+  let cancelRequested = false
+  let resolveCancel: (() => void) | null = null
 
   const sendRequest = (method: string, params: unknown): Promise<any> => {
     const id = nextId++
@@ -230,6 +233,29 @@ async function serve(scenario: Scenario): Promise<void> {
       }
 
       case 'session/prompt':
+        if (scenario === 'cancel') {
+          // Block until the client cancels, so a cancel that never reaches the
+          // agent cannot pass by accident.
+          write({
+            jsonrpc: '2.0',
+            method: 'session/update',
+            params: {
+              sessionId: SESSION_ID,
+              update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'working' } },
+            },
+          })
+          await new Promise<void>((resolve) => {
+            resolveCancel = resolve
+          })
+          if (msg.id !== undefined) {
+            write({
+              jsonrpc: '2.0',
+              id: msg.id,
+              result: { stopReason: cancelRequested ? 'cancelled' : 'end_turn' },
+            })
+          }
+          return
+        }
         await runScenario(scenario, textOf(msg.params), sendRequest)
         if (msg.id !== undefined) {
           write({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
@@ -237,6 +263,9 @@ async function serve(scenario: Scenario): Promise<void> {
         return
 
       case 'session/cancel':
+        cancelRequested = true
+        resolveCancel?.()
+        resolveCancel = null
         return
     }
   }

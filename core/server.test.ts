@@ -94,6 +94,22 @@ describe('core server', () => {
     await waitFor(() => messages.some((m) => m.event?.type === 'error'))
     ws.close()
   })
+
+  it('a cancel message settles the in-flight turn as cancelled', async () => {
+    core = await startCore({ port: 0, backend: 'fake:cancel' })
+    const ws = new WebSocket(`ws://127.0.0.1:${core.port}/ws`)
+    const messages: any[] = []
+    await once(ws, 'open')
+    ws.on('message', (data) => messages.push(JSON.parse(String(data))))
+    ws.send(JSON.stringify({ type: 'prompt', text: 'hi' }))
+
+    await waitFor(() => messages.some((m) => m.event?.type === 'chunk'))
+    ws.send(JSON.stringify({ type: 'cancel' }))
+    await waitFor(() => messages.some((m) => m.event?.type === 'turn.finished'))
+    const finished = messages.find((m) => m.event?.type === 'turn.finished')
+    expect(finished.event.stopReason).toBe('cancelled')
+    ws.close()
+  })
 })
 
 describe('origin guard', () => {
