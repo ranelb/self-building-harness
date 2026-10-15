@@ -11,6 +11,7 @@ import {
   registerComponent,
   setLive,
   str,
+  type RenderContext,
   type UiNode,
 } from '../tree/render.ts'
 import { renderMarkdown } from '../tree/markdown.ts'
@@ -67,36 +68,87 @@ registerComponent({
 
 // --- transcript ------------------------------------------------------------------
 
+/**
+ * How the transcript stays bounded. Messages have wildly different heights and
+ * markdown gives no measurement before layout, so this is count-windowing rather
+ * than position virtualization: only the most recent page is in the DOM, and
+ * older ones load a page at a time on demand. 10k messages render initially like
+ * 80 — the point is that the DOM size is bounded, not that every row is measured.
+ */
+const TRANSCRIPT_PAGE = 80
+
+type Windowed = HTMLElement & { __sbhRendered?: number }
+
+/** Within a scroll of the bottom, treat the user as "following" the stream. */
+const nearBottom = (host: HTMLElement): boolean =>
+  host.scrollHeight - host.scrollTop - host.clientHeight < 40
+
+function paintTranscript(host: Windowed, ctx: RenderContext): void {
+  const messages = ctx.host.messages
+  const rendered = Math.min(messages.length, Math.max(TRANSCRIPT_PAGE, host.__sbhRendered ?? 0))
+  host.__sbhRendered = rendered
+  const start = messages.length - rendered
+
+  host.replaceChildren()
+
+  if (start > 0) {
+    const earlier = document.createElement('button')
+    earlier.type = 'button'
+    earlier.textContent = `Load earlier messages (${start} hidden)`
+    earlier.style.cssText =
+      'align-self:center;border:1px solid var(--sbh-color-border);background:var(--sbh-color-surface);' +
+      'color:var(--sbh-color-text-muted);border-radius:var(--sbh-radius-full);padding:var(--sbh-space-xs) var(--sbh-space-md);' +
+      'font-family:var(--sbh-font-sans);font-size:var(--sbh-font-size-sm);cursor:pointer'
+    earlier.addEventListener('click', () => {
+      // Anchor the viewport across the prepend: the newly loaded rows go above the
+      // button, so the content under the cursor must not jump.
+      const previousHeight = host.scrollHeight
+      const previousTop = host.scrollTop
+      host.__sbhRendered = (host.__sbhRendered ?? TRANSCRIPT_PAGE) + TRANSCRIPT_PAGE
+      const live = getLive(host)
+      if (live) paintTranscript(host, live.ctx)
+      host.scrollTop = previousTop + (host.scrollHeight - previousHeight)
+    })
+    host.appendChild(earlier)
+  }
+
+  for (let index = start; index < messages.length; index += 1) {
+    const message = messages[index]
+    if (!message) continue
+    const line = document.createElement('div')
+    line.className = 'sbh-markdown'
+    line.appendChild(renderMarkdown(message.role === 'user' ? `**you:** ${message.text}` : message.text))
+    host.appendChild(line)
+  }
+
+  if (ctx.host.status === 'error' && ctx.host.error) {
+    const line = document.createElement('div')
+    line.textContent = `error: ${ctx.host.error}`
+    line.style.color = 'var(--sbh-color-danger)'
+    host.appendChild(line)
+  }
+}
+
 registerComponent({
   name: 'transcript',
-  create(node) {
+  create(node, ctx) {
     const el = document.createElement('div')
     el.setAttribute('data-atom', 'transcript')
     el.style.overflowY = 'auto'
     el.style.minHeight = '0'
     stream(el, node)
+    setLive(el, node, ctx)
     return el
   },
   update(el, node, ctx) {
-    const host = el as HTMLElement
+    const host = el as Windowed
+    setLive(host, node, ctx)
     stream(host, node)
-
-    // Rebuilt wholesale: messages are stateless leaves, and this keeps the
-    // component honest about whose job the list is.
-    host.replaceChildren()
-    for (const message of ctx.host.messages) {
-      const line = document.createElement('div')
-      line.className = 'sbh-markdown'
-      line.appendChild(renderMarkdown(message.role === 'user' ? `**you:** ${message.text}` : message.text))
-      host.appendChild(line)
-    }
-    if (ctx.host.status === 'error' && ctx.host.error) {
-      const line = document.createElement('div')
-      line.textContent = `error: ${ctx.host.error}`
-      line.style.color = 'var(--sbh-color-danger)'
-      host.appendChild(line)
-    }
-    host.scrollTop = host.scrollHeight
+    // Follow the stream only if the user was already at the bottom; scrolling back
+    // through history must not be yanked away by an incoming chunk.
+    const following = nearBottom(host)
+    paintTranscript(host, ctx)
+    if (following) host.scrollTop = host.scrollHeight
   },
 })
 
