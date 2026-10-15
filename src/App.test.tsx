@@ -5,6 +5,11 @@ import { App } from './App'
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 
+const waitForSocket = async (): Promise<FakeSocket | undefined> => {
+  for (let attempt = 0; attempt < 50 && !FakeSocket.last; attempt += 1) await tick()
+  return FakeSocket.last
+}
+
 /** Minimal WebSocket stand-in so a test can drive events and read what was sent. */
 class FakeSocket {
   static OPEN = 1
@@ -47,12 +52,13 @@ describe('App', () => {
   it('cancels a streaming turn from the composer', async () => {
     const original = globalThis.WebSocket
     ;(globalThis as { WebSocket: unknown }).WebSocket = FakeSocket
+    FakeSocket.last = undefined
     try {
       const host = document.createElement('div')
       document.body.appendChild(host)
       render(<App coreUrl="ws://127.0.0.1:9/ws" />, host)
       await tick()
-      const socket = FakeSocket.last
+      const socket = await waitForSocket()
       expect(socket).toBeDefined()
       socket?.onmessage?.({ data: JSON.stringify({ type: 'event', event: { type: 'turn.started' } }) })
       await tick()
@@ -60,6 +66,37 @@ describe('App', () => {
       expect(button.textContent).toBe('Stop')
       button.click()
       expect(socket?.sent).toContainEqual({ type: 'cancel' })
+      render(null, host)
+      host.remove()
+    } finally {
+      ;(globalThis as { WebSocket: unknown }).WebSocket = original
+    }
+  })
+
+  it('starts a new chat and prefills the draft when editing a prompt', async () => {
+    const original = globalThis.WebSocket
+    ;(globalThis as { WebSocket: unknown }).WebSocket = FakeSocket
+    FakeSocket.last = undefined
+    try {
+      const host = document.createElement('div')
+      document.body.appendChild(host)
+      render(<App coreUrl="ws://127.0.0.1:9/ws" />, host)
+      await tick()
+      const socket = await waitForSocket()
+      expect(socket, 'no socket was created').toBeDefined()
+      socket?.onmessage?.({ data: JSON.stringify({ type: 'event', event: { type: 'user.chunk', text: 'hello' } }) })
+      await tick()
+
+      const newChat = host.querySelector('button[data-new-chat]') as HTMLButtonElement
+      newChat.click()
+      expect(socket?.sent, JSON.stringify(socket?.sent)).toContainEqual({ type: 'session.new' })
+
+      const edit = host.querySelector('button[data-edit]') as HTMLButtonElement
+      edit.click()
+      await tick()
+      const input = host.querySelector('input[data-atom="input"]') as HTMLInputElement
+      expect(input.value).toBe('hello')
+
       render(null, host)
       host.remove()
     } finally {

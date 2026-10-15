@@ -149,6 +149,26 @@ const renderItem = (item: TimelineItem): HTMLElement => {
         'font-style:italic;margin-top:var(--sbh-space-xs)'
       wrap.appendChild(mark)
     }
+    const edit = document.createElement('button')
+    edit.setAttribute('data-edit', item.id)
+    edit.textContent = 'Edit'
+    edit.title = 'Edit this prompt'
+    edit.style.cssText =
+      'align-self:flex-end;border:none;background:transparent;color:var(--sbh-color-text-muted);' +
+      'font-family:var(--sbh-font-sans);font-size:var(--sbh-font-size-sm);cursor:pointer;' +
+      'opacity:0;transition:opacity .12s;padding:0;margin-top:var(--sbh-space-xs)'
+    wrap.addEventListener('mouseenter', () => {
+      edit.style.opacity = '1'
+    })
+    wrap.addEventListener('mouseleave', () => {
+      edit.style.opacity = '0'
+    })
+    edit.addEventListener('click', () => {
+      const host = wrap.closest('[data-atom="transcript"]')
+      const live = host ? getLive(host) : undefined
+      if (live) live.ctx.dispatch('message.edit', { id: item.id })
+    })
+    wrap.appendChild(edit)
     return wrap
   }
 
@@ -686,6 +706,17 @@ registerComponent({
     heading.style.cssText =
       'flex-shrink:0;font-size:var(--sbh-font-size-sm);color:var(--sbh-color-text-muted);padding:var(--sbh-space-xs) 0'
     el.appendChild(heading)
+
+    const newChat = document.createElement('button')
+    newChat.setAttribute('data-new-chat', '')
+    newChat.textContent = '+ New chat'
+    controlStyle(newChat)
+    newChat.style.flexShrink = '0'
+    newChat.addEventListener('click', () => {
+      const live = getLive(el)
+      if (live) live.ctx.dispatch('session.new')
+    })
+    el.appendChild(newChat)
 
     const search = document.createElement('input')
     search.setAttribute('data-session-filter', '')

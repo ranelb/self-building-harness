@@ -116,6 +116,17 @@ describe('sessions sidebar', () => {
     expect(rows).toHaveLength(1)
     expect((rows[0] as HTMLElement).dataset.session).toBe('b')
   })
+
+  it('offers a New Chat button', () => {
+    const base = withMessages(0)
+    const actions: string[] = []
+    const ctx: RenderContext = { ...base, dispatch: (action: string) => actions.push(action) }
+    const el = renderTree({ type: 'sessions' }, ctx) as HTMLElement
+    const button = el.querySelector('button[data-new-chat]') as HTMLButtonElement
+    expect(button).not.toBeNull()
+    button.click()
+    expect(actions).toEqual(['session.new'])
+  })
 })
 
 describe('timeline items', () => {
@@ -144,6 +155,22 @@ describe('timeline items', () => {
     expect(el.textContent).toContain('weighing options')
     expect(el.textContent).toContain('edit src/app.ts')
     expect(el.querySelectorAll('[data-item="tool"]')).toHaveLength(1)
+  })
+
+  it('dispatches message.edit with the user item id', () => {
+    const base = withMessages(0)
+    const actions: { action: string; id?: unknown }[] = []
+    const ctx: RenderContext = {
+      ...base,
+      host: { ...base.host, items: [{ id: 'u1', kind: 'user', text: 'hi', attachments: [] }] },
+      dispatch: (action: string, payload?: unknown) =>
+        actions.push({ action, id: (payload as { id?: unknown } | undefined)?.id }),
+    }
+    const el = renderTree({ type: 'transcript' }, ctx) as HTMLElement
+    const edit = el.querySelector('button[data-edit="u1"]') as HTMLButtonElement
+    expect(edit).not.toBeNull()
+    edit.click()
+    expect(actions).toEqual([{ action: 'message.edit', id: 'u1' }])
   })
 })
 

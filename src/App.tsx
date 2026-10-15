@@ -8,6 +8,7 @@ import { connectStream, type Stream } from './ui/state/stream.ts'
 import {
   applyEvent,
   empty,
+  markSuperseded,
   resolvePermission,
   toMessages,
   withUserMessage,
@@ -65,6 +66,8 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const host = useRef<HTMLDivElement>(null)
   const stream = useRef<Stream | null>(null)
+  /** The user item being edited, if the next send should branch for it. */
+  const pendingEdit = useRef<string | null>(null)
 
   // One effect owns the connection, the initial loads and every refresh, so hot
   // reload and first paint go down exactly the same path.
@@ -200,6 +203,29 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
           stream.current?.send({ type: 'cancel' })
           return
 
+        case 'session.new':
+          pendingEdit.current = null
+          stream.current?.send({ type: 'session.new' })
+          return
+
+        case 'message.edit': {
+          const id = String(props?.id ?? '')
+          const item = transcript.items.find((entry) => entry.kind === 'user' && entry.id === id)
+          if (!item || item.kind !== 'user') return
+          // Prefill and dim the original; a true branch needs a backend fork point.
+          setDraft(item.text)
+          setTranscript((previous) => markSuperseded(previous, id))
+          pendingEdit.current = id
+          const input = host.current?.querySelector<HTMLInputElement>('input[data-atom="input"]')
+          if (input) {
+            // Set it directly: `update` deliberately never overwrites a focused
+            // input, and we focus it here.
+            input.value = item.text
+            input.focus()
+          }
+          return
+        }
+
         case 'prompt.send': {
           // Read the live input, not the last rendered state: at typing speed the
           // state can lag a keystroke, which silently truncated sent prompts.
@@ -207,6 +233,14 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
           const text = (live?.value ?? draft).trim()
           const outgoing = attachments
           if (!text && outgoing.length === 0) return
+          // An edit becomes a real branch only when the backend forks and the
+          // edit is the last user turn; otherwise it is a resend (dimmed above).
+          const editing = pendingEdit.current
+          pendingEdit.current = null
+          if (editing && transcript.capabilities.fork) {
+            const lastUser = [...transcript.items].reverse().find((entry) => entry.kind === 'user')
+            if (lastUser?.id === editing) stream.current?.send({ type: 'session.fork' })
+          }
           setTranscript((previous) => withUserMessage(previous, text, outgoing))
           stream.current?.send({
             type: 'prompt',
