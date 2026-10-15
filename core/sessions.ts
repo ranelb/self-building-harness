@@ -207,3 +207,50 @@ export async function readSession(root: string, id: string): Promise<SessionDeta
 
   return { summary, turns }
 }
+
+/**
+ * Total price pi recorded for a session, summed from `message.usage.cost`.
+ *
+ * ACP's `usage_update` from pi-acp carries context occupancy only; pi keeps the
+ * price in its own store, and this module already reads that store (read-only).
+ * Returns null when there is no cost to report, so the caller can fall back.
+ */
+export async function readSessionCost(root: string, id: string): Promise<number | null> {
+  const summary = (await listSessions(root, Number.MAX_SAFE_INTEGER)).find((s) => s.id === id)
+  if (!summary) return null
+
+  let raw: string
+  try {
+    raw = await readFile(summary.path, 'utf8')
+  } catch {
+    return null
+  }
+
+  let total = 0
+  let seen = false
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue
+    let entry: unknown
+    try {
+      entry = JSON.parse(line)
+    } catch {
+      continue
+    }
+    if (!isRecord(entry) || entry.type !== 'message' || !isRecord(entry.message)) continue
+    const usage = entry.message.usage
+    if (!isRecord(usage) || !isRecord(usage.cost)) continue
+    const cost = usage.cost
+    const value =
+      typeof cost.total === 'number'
+        ? cost.total
+        : (['input', 'output', 'cacheRead', 'cacheWrite'] as const).reduce(
+            (sum, key) => sum + (typeof cost[key] === 'number' ? (cost[key] as number) : 0),
+            0
+          )
+    if (Number.isFinite(value)) {
+      total += value
+      seen = true
+    }
+  }
+  return seen ? total : null
+}

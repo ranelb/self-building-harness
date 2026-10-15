@@ -21,7 +21,7 @@ import {
   readProfileComponent,
 } from './profile.ts'
 import { ensureLayoutFile, readLayout } from './layout.ts'
-import { listSessions, readSession, type SessionSummary } from './sessions.ts'
+import { listSessions, readSession, readSessionCost, type SessionSummary } from './sessions.ts'
 import { ensureThemeFile, readTheme } from './theme.ts'
 import { sampleSystem } from './system.ts'
 import { ensureRepo, history, revertLast, snapshot } from './versioning.ts'
@@ -264,6 +264,30 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     broadcast(event)
   }
 
+  /**
+   * pi-acp's `usage_update` carries context occupancy but not price, and pi keeps
+   * the price in its own store. Read it (read-only) and fold it into the event so a
+   * client sees one usage value with both. Neutral on the wire; pi only in source.
+   */
+  const enrichUsage = async (
+    connection: AcpConnection,
+    event: { type: 'usage'; used: number; size: number; cost?: unknown }
+  ): Promise<void> => {
+    try {
+      const id = connection.currentSessionId()
+      if (id) {
+        const cost = await readSessionCost(sessionsRoot, id)
+        if (cost !== null) {
+          broadcast({ ...event, cost })
+          return
+        }
+      }
+    } catch {
+      // fall through to the un-enriched event
+    }
+    broadcast(event)
+  }
+
   const ensureConnection = (): AcpConnection => {
     if (conn) return conn
     const created = connectAcp({
@@ -290,6 +314,10 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
           fork: event.fork,
         }
         sendToAll({ type: 'state', key: 'capabilities', value: capabilitiesState })
+        return
+      }
+      if (event.type === 'usage' && event.cost === undefined && backendId === 'pi') {
+        void enrichUsage(created, event)
         return
       }
       broadcast(event)

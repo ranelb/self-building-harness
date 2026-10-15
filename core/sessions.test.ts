@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { listSessions, readSession } from './sessions.ts'
+import { listSessions, readSession, readSessionCost } from './sessions.ts'
 
 let root: string
 
@@ -155,5 +155,33 @@ describe('readSession', () => {
     expect(await readSession(root, '../../../../etc/passwd')).toBeNull()
     expect(await readSession(root, '..%2f..%2fetc%2fpasswd')).toBeNull()
     expect(await readSession(root, '')).toBeNull()
+  })
+})
+
+describe('readSessionCost', () => {
+  it('sums message.usage.cost across the session', async () => {
+    const costed = (total: number) =>
+      JSON.stringify({
+        type: 'message',
+        id: 'c',
+        parentId: null,
+        timestamp: '2026-01-01T00:00:00.000Z',
+        message: { role: 'assistant', content: [], usage: { cost: { input: total / 2, output: total / 2, total } } },
+      })
+    await writeSession('--home-user--', 'stamp_cost.jsonl', [
+      header('cost', '/home/user', '2026-01-01T10:00:00.000Z'),
+      costed(0.25),
+      costed(0.5),
+    ])
+    expect(await readSessionCost(root, 'cost')).toBeCloseTo(0.75)
+  })
+
+  it('returns null when no message carries a cost', async () => {
+    await writeSession('--home-user--', 'stamp_free.jsonl', [
+      header('free', '/home/user', '2026-01-01T10:00:00.000Z'),
+      message('assistant', [{ type: 'text', text: 'hi' }]),
+    ])
+    expect(await readSessionCost(root, 'free')).toBeNull()
+    expect(await readSessionCost(root, 'missing')).toBeNull()
   })
 })

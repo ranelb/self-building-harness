@@ -45,6 +45,8 @@ export interface AcpConnection {
   fork(): Promise<string>
   /** Resolves once `initialize` has settled (capabilities are known). */
   ready(): Promise<void>
+  /** The current ACP session id, once a session exists. */
+  currentSessionId(): string | null
   close(): void
 }
 
@@ -364,6 +366,10 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
 
     async ready() {
       await ready
+    },
+
+    currentSessionId() {
+      return sessionId
     },
 
     async fork() {

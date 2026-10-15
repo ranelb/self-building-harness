@@ -19,9 +19,7 @@ export const DEFAULT_LAYOUT: UiNode = {
       children: [
         { type: 'notices' },
         { type: 'row', children: [{ type: 'harnessPicker' }, { type: 'modelPicker' }] },
-        { type: 'usage' },
         { type: 'transcript', props: { grow: true } },
-        { type: 'changedFiles' },
         { type: 'permission' },
         { type: 'composer' },
       ],
