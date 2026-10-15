@@ -611,7 +611,7 @@ const paintCommands = (el: ComposerHost, input: HTMLInputElement, commands: Avai
   const matches =
     query === null
       ? []
-      : commands.filter((command) => command.name.toLowerCase().includes(query)).slice(0, 8)
+      : commands.filter((command) => command.name.toLowerCase().includes(query))
   if (matches.length === 0) {
     menu.style.display = 'none'
     menu.replaceChildren()

@@ -274,4 +274,22 @@ describe('composer', () => {
     ;(items[0] as HTMLButtonElement).dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
     expect(input.value).toBe('/skill:grilling ')
   })
+
+  it('lists agent builtins that come after the skills', () => {
+    const base = withMessages(0)
+    const skills = Array.from({ length: 12 }, (_, index) => ({
+      name: `skill:${index}`,
+      description: 'a skill',
+    }))
+    const ctx: RenderContext = {
+      ...base,
+      host: { ...base.host, commands: [...skills, { name: 'compact', description: 'compact' }] },
+    }
+    const el = renderTree({ type: 'composer' }, ctx) as HTMLElement
+    const input = el.querySelector('input[data-atom="input"]') as HTMLInputElement
+    input.value = '/'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(el.querySelectorAll('button[data-command]')).toHaveLength(13)
+    expect(el.querySelector('button[data-command="compact"]')).not.toBeNull()
+  })
 })
