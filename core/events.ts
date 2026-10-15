@@ -31,6 +31,24 @@ const readLocations = (raw: unknown): { path: string; line?: number }[] => {
 }
 
 /**
+ * Read an image/audio content block from a replayed user message, or null.
+ * A live turn's attachments are added by the composer; only replay sends these.
+ */
+const attachmentOf = (content: unknown): UiEvent[] => {
+  if (!isRecord(content)) return []
+  if (content.type !== 'image' && content.type !== 'audio') return []
+  if (typeof content.data !== 'string' || typeof content.mimeType !== 'string') return []
+  return [
+    {
+      type: 'attachment',
+      mimeType: content.mimeType,
+      data: content.data,
+      ...(typeof content.uri === 'string' ? { uri: content.uri } : {}),
+    },
+  ]
+}
+
+/**
  * Map one ACP `session/update` payload to zero or more UI events.
  *
  * Unknown and malformed updates return `[]` on purpose: a future ACP version
@@ -49,7 +67,8 @@ export function normalizeUpdate(update: unknown): UiEvent[] {
       // Only replay (`session/load`) sends this; a live turn does not, so it never
       // duplicates the message the composer already added.
       const text = textOf(update.content)
-      return text === null ? [] : [{ type: 'user.chunk', text }]
+      if (text !== null) return [{ type: 'user.chunk', text }]
+      return attachmentOf(update.content)
     }
 
     case 'agent_thought_chunk': {

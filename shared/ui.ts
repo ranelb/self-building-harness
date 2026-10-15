@@ -3,7 +3,7 @@
  * and consumed by the UI.
  */
 
-import type { PermissionRequest } from './protocol.ts'
+import type { AgentCapabilities, Attachment, PermissionRequest } from './protocol.ts'
 
 export interface UiNode {
   type: string
@@ -38,6 +38,36 @@ export interface HostMessage {
   text: string
 }
 
+export interface ToolLocation {
+  path: string
+  line?: number
+}
+
+/**
+ * One entry in the conversation timeline. Ordering is the point: reasoning and
+ * tool calls sit where they happened, not flattened into messages.
+ */
+export type TimelineItem =
+  | { id: string; kind: 'user'; text: string; attachments: Attachment[]; superseded?: boolean }
+  | { id: string; kind: 'agent'; text: string }
+  | { id: string; kind: 'thought'; text: string }
+  | {
+      id: string
+      kind: 'tool'
+      toolCallId: string
+      title: string
+      status?: string
+      /** ACP ToolKind (`edit`, `execute`, …); `kind` is taken by the discriminant. */
+      toolKind?: string
+      locations: ToolLocation[]
+    }
+
+/** Files touched by `edit` tools, grouped by the turn that touched them. */
+export interface ChangedFilesGroup {
+  turn: number
+  files: ToolLocation[]
+}
+
 export type PendingPermission = PermissionRequest
 
 export interface PickOption {
@@ -62,6 +92,12 @@ export interface SessionSummary {
 
 export interface HostState {
   messages: HostMessage[]
+  /** The ordered conversation timeline; reasoning and tools included. */
+  items: TimelineItem[]
+  /** Files edited, grouped per turn. */
+  changedFiles: ChangedFilesGroup[]
+  /** What the agent reported it can do (image, fork, …). */
+  capabilities: AgentCapabilities
   status: 'idle' | 'streaming' | 'error'
   error?: string
   /** The composer's current text. */

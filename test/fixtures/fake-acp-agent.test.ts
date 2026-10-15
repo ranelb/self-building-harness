@@ -4,7 +4,7 @@ import { SCENARIOS, spawnFakeAgent } from './fake-acp-agent.ts'
 describe('fake ACP agent', () => {
   it('advertises every scenario this plan relies on', () => {
     expect([...SCENARIOS].sort()).toEqual(
-      ['crash-mid-turn', 'happy', 'permission', 'split-multibyte', 'unknown-update', 'usage'].sort()
+      ['cancel', 'crash-mid-turn', 'happy', 'permission', 'split-multibyte', 'unknown-update', 'usage'].sort()
     )
   })
 

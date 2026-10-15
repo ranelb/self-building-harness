@@ -1,96 +1,153 @@
 import { describe, it, expect } from 'vitest'
-import { applyEvent, empty, resolvePermission, withUserMessage } from './transcript.ts'
+import { applyEvent, empty, markSuperseded, resolvePermission, toMessages, withUserMessage } from './transcript.ts'
+import type { UiEvent } from '../../../shared/protocol.ts'
 
-describe('applyEvent', () => {
-  it('coalesces consecutive chunks into one agent message', () => {
-    let state = applyEvent(empty(), { type: 'chunk', text: 'Hel' })
-    state = applyEvent(state, { type: 'chunk', text: 'lo' })
-    expect(state.messages).toHaveLength(1)
-    expect(state.messages[0]?.text).toBe('Hello')
+const apply = (events: UiEvent[], start = empty()) => events.reduce(applyEvent, start)
+
+const tool = (over: Partial<Extract<UiEvent, { type: 'tool' }>> = {}): UiEvent => ({
+  type: 'tool',
+  toolCallId: 't1',
+  title: 'edit',
+  ...over,
+})
+
+describe('timeline', () => {
+  it('coalesces consecutive agent chunks into one item', () => {
+    const state = apply([
+      { type: 'turn.started' },
+      { type: 'chunk', text: 'he' },
+      { type: 'chunk', text: 'llo' },
+    ])
+    expect(state.items).toHaveLength(1)
+    expect(state.items[0]).toMatchObject({ kind: 'agent', text: 'hello' })
   })
 
-  it('starts a new message after a turn finishes', () => {
-    let state = applyEvent(empty(), { type: 'chunk', text: 'a' })
-    state = applyEvent(state, { type: 'turn.finished', stopReason: 'end_turn' })
-    state = applyEvent(state, { type: 'chunk', text: 'b' })
-    expect(state.messages).toHaveLength(2)
-    expect(state.messages[1]?.text).toBe('b')
+  it('starts a new agent item after a turn finishes', () => {
+    const state = apply([
+      { type: 'turn.started' },
+      { type: 'chunk', text: 'a' },
+      { type: 'turn.finished', stopReason: 'end_turn' },
+      { type: 'turn.started' },
+      { type: 'chunk', text: 'b' },
+    ])
+    expect(state.items.map((item) => item.kind)).toEqual(['agent', 'agent'])
+    expect((state.items[1] as { text: string }).text).toBe('b')
   })
 
-  it('records an error without dropping the transcript', () => {
-    let state = applyEvent(empty(), { type: 'chunk', text: 'a' })
-    state = applyEvent(state, { type: 'error', message: 'boom' })
-    expect(state.status).toBe('error')
-    expect(state.error).toBe('boom')
-    expect(state.messages[0]?.text).toBe('a')
+  it('appends a live user message and keeps its attachments', () => {
+    const state = withUserMessage(empty(), 'look', [
+      { name: 'p.png', mimeType: 'image/png', data: 'AAA' },
+    ])
+    expect(state.items[0]).toMatchObject({ kind: 'user', text: 'look' })
+    expect((state.items[0] as { attachments: unknown[] }).attachments).toHaveLength(1)
   })
 
-  it('queues a permission request with the whole tool call', () => {
+  it('interleaves thought, agent text and tool calls in order', () => {
+    const state = apply([
+      { type: 'turn.started' },
+      { type: 'thought', text: 'why' },
+      { type: 'chunk', text: 'answer' },
+      tool({ kind: 'edit' }),
+    ])
+    expect(state.items.map((item) => item.kind)).toEqual(['thought', 'agent', 'tool'])
+  })
+
+  it('merges a tool update by id rather than appending', () => {
+    const state = apply([
+      { type: 'turn.started' },
+      tool({ kind: 'edit', status: 'pending' }),
+      tool({ title: 'tool', status: 'completed' }),
+    ])
+    expect(state.items.filter((item) => item.kind === 'tool')).toHaveLength(1)
+    const item = state.items[0] as { status?: string; toolKind?: string; title: string }
+    expect(item.status).toBe('completed')
+    expect(item.toolKind).toBe('edit')
+    expect(item.title).toBe('edit')
+  })
+
+  it('records changed files per turn for edit tools only', () => {
+    const state = apply([
+      { type: 'turn.started' },
+      tool({ toolCallId: 't1', kind: 'edit', locations: [{ path: 'a.ts' }] }),
+      tool({ toolCallId: 't2', kind: 'execute', locations: [{ path: 'ignored.ts' }] }),
+      { type: 'turn.finished', stopReason: 'end_turn' },
+      { type: 'turn.started' },
+      tool({ toolCallId: 't3', kind: 'edit', locations: [{ path: 'b.ts' }, { path: 'a.ts' }] }),
+    ])
+    expect(state.changedFiles).toEqual([
+      { turn: 1, files: [{ path: 'a.ts' }] },
+      { turn: 2, files: [{ path: 'b.ts' }, { path: 'a.ts' }] },
+    ])
+  })
+
+  it('session.reset clears the timeline but keeps capabilities', () => {
+    const started = apply([
+      { type: 'capabilities', image: true, audio: false, embeddedContext: false, fork: false },
+      { type: 'turn.started' },
+      { type: 'chunk', text: 'hi' },
+    ])
+    const state = applyEvent(started, { type: 'session.reset', reason: 'new' })
+    expect(state.items).toHaveLength(0)
+    expect(state.capabilities.image).toBe(true)
+  })
+
+  it('attaches a replayed attachment to the preceding user item', () => {
+    const state = apply([
+      { type: 'user.chunk', text: 'see this' },
+      { type: 'attachment', mimeType: 'image/png', data: 'AAA' },
+    ])
+    expect((state.items[0] as { attachments: unknown[] }).attachments).toHaveLength(1)
+  })
+
+  it('updates capabilities from the event', () => {
     const state = applyEvent(empty(), {
-      type: 'permission.requested',
-      requestId: 'r1',
-      title: 'Run ls',
-      kind: 'execute',
-      name: 'shell',
-      rawInput: { command: 'ls -la' },
+      type: 'capabilities',
+      image: true,
+      audio: false,
+      embeddedContext: false,
+      fork: true,
     })
-    expect(state.pendingPermission).toHaveLength(1)
-    expect(state.pendingPermission[0]).toMatchObject({
-      requestId: 'r1',
-      title: 'Run ls',
-      kind: 'execute',
-      name: 'shell',
-      rawInput: { command: 'ls -la' },
-    })
+    expect(state.capabilities).toEqual({ image: true, audio: false, embeddedContext: false, fork: true })
   })
 
-  it('is streaming between turn.started and turn.finished', () => {
-    let state = applyEvent(empty(), { type: 'turn.started' })
-    expect(state.status).toBe('streaming')
-    state = applyEvent(state, { type: 'turn.finished', stopReason: 'end_turn' })
-    expect(state.status).toBe('idle')
+  it('marks a user item superseded', () => {
+    const state = withUserMessage(empty(), 'oops')
+    const id = state.items[0]!.id
+    expect(markSuperseded(state, id).items[0]).toMatchObject({ superseded: true })
   })
 })
 
-describe('withUserMessage', () => {
-  it('appends a user message and leaves the agent message separate', () => {
-    const state = withUserMessage(empty(), 'hi there')
-    expect(state.messages).toHaveLength(1)
-    expect(state.messages[0]).toMatchObject({ role: 'user', text: 'hi there' })
+describe('toMessages', () => {
+  it('maps user and agent items, dropping thoughts and tools', () => {
+    const state = apply([
+      { type: 'user.chunk', text: 'q' },
+      { type: 'turn.started' },
+      { type: 'thought', text: 'x' },
+      { type: 'chunk', text: 'a' },
+      tool({}),
+    ])
+    expect(toMessages(state)).toEqual([
+      { id: expect.any(String), role: 'user', text: 'q' },
+      { id: expect.any(String), role: 'agent', text: 'a' },
+    ])
   })
 })
 
 describe('resolvePermission', () => {
   it('drops only the answered request', () => {
-    let state = applyEvent(empty(), { type: 'permission.requested', requestId: 'r1', title: 'one' })
-    state = applyEvent(state, { type: 'permission.requested', requestId: 'r2', title: 'two' })
-    state = resolvePermission(state, 'r1')
-    expect(state.pendingPermission).toEqual([
-      expect.objectContaining({ requestId: 'r2', title: 'two' }),
+    const state = apply([
+      {
+        type: 'permission.requested',
+        requestId: 'r1',
+        title: 'Run ls',
+      },
+      {
+        type: 'permission.requested',
+        requestId: 'r2',
+        title: 'Write file',
+      },
     ])
-  })
-})
-
-describe('replay (user.chunk)', () => {
-  it('rebuilds a replayed conversation as alternating messages', () => {
-    let s = empty()
-    s = applyEvent(s, { type: 'user.chunk', text: 'question' })
-    s = applyEvent(s, { type: 'chunk', text: 'ans' })
-    s = applyEvent(s, { type: 'chunk', text: 'wer' })
-    s = applyEvent(s, { type: 'user.chunk', text: 'follow up' })
-    s = applyEvent(s, { type: 'chunk', text: 'reply' })
-    expect(s.messages.map((m) => `${m.role}:${m.text}`)).toEqual([
-      'user:question',
-      'agent:answer',
-      'user:follow up',
-      'agent:reply',
-    ])
-  })
-
-  it('coalesces consecutive user chunks of one message', () => {
-    let s = applyEvent(empty(), { type: 'user.chunk', text: 'a' })
-    s = applyEvent(s, { type: 'user.chunk', text: 'b' })
-    expect(s.messages).toHaveLength(1)
-    expect(s.messages[0]).toMatchObject({ role: 'user', text: 'ab' })
+    const resolved = resolvePermission(state, 'r1')
+    expect(resolved.pendingPermission.map((p) => p.requestId)).toEqual(['r2'])
   })
 })

@@ -134,7 +134,12 @@ describe('connectAcp', () => {
     const conn = connectAcp(fake('cancel'))
     const events = collect(conn)
     const turn = conn.prompt('hello')
-    await new Promise((resolve) => setTimeout(resolve, 80))
+    // Wait for the turn to actually start, so `cancel` cannot race the session.
+    const started = Date.now()
+    while (!events.some((e) => e.type === 'chunk')) {
+      if (Date.now() - started > 5000) throw new Error('turn never started')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
     await conn.cancel()
     await turn
     const finished = events.find(

@@ -78,6 +78,19 @@ describe('normalizeUpdate', () => {
     ).toEqual([{ type: 'tool', toolCallId: 't3', title: 'tool' }])
   })
 
+  it('maps a replayed user image to an attachment event', () => {
+    expect(
+      normalizeUpdate({
+        sessionUpdate: 'user_message_chunk',
+        content: { type: 'image', mimeType: 'image/png', data: 'AAA' },
+      })
+    ).toEqual([{ type: 'attachment', mimeType: 'image/png', data: 'AAA' }])
+    // A text user chunk is still a user chunk, not an attachment.
+    expect(
+      normalizeUpdate({ sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'hi' } })
+    ).toEqual([{ type: 'user.chunk', text: 'hi' }])
+  })
+
   it('maps a usage update to a usage event', () => {
     // Without this the context meter looks impossible to build: ACP carries the
     // data, and the normalizer was dropping it on the floor.

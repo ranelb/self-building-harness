@@ -9,6 +9,7 @@ import {
   applyEvent,
   empty,
   resolvePermission,
+  toMessages,
   withUserMessage,
   type Transcript,
 } from './ui/state/transcript.ts'
@@ -149,7 +150,10 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
   }, [coreUrl])
 
   const hostState: HostState = {
-    messages: transcript.messages,
+    messages: toMessages(transcript),
+    items: transcript.items,
+    changedFiles: transcript.changedFiles,
+    capabilities: transcript.capabilities,
     status: transcript.status,
     error: transcript.error,
     draft,

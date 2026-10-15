@@ -35,6 +35,8 @@ export type UiEvent =
       /** ACP ToolCallContent (may carry a diff). */
       content?: unknown
     }
+  /** A replayed user attachment (non-text content block). */
+  | { type: 'attachment'; mimeType: string; name?: string; data?: string; uri?: string }
   | {
       type: 'permission.requested'
       requestId: string
@@ -75,6 +77,14 @@ export interface Attachment {
   name: string
   mimeType: string
   data: string
+}
+
+/** What an agent reported it can do, from its `initialize` result. */
+export interface AgentCapabilities {
+  image: boolean
+  audio: boolean
+  embeddedContext: boolean
+  fork: boolean
 }
 
 /** Client -> core. */

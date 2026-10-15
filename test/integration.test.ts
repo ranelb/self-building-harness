@@ -9,7 +9,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { startCore, type Core } from '../core/server.ts'
 import { connectStream } from '../src/ui/state/stream.ts'
-import { applyEvent, empty, withUserMessage, type Transcript } from '../src/ui/state/transcript.ts'
+import { applyEvent, empty, toMessages, withUserMessage, type Transcript } from '../src/ui/state/transcript.ts'
 
 let core: Core | undefined
 
@@ -37,9 +37,9 @@ describe('core -> ws -> transcript', () => {
     })
 
     stream.send({ type: 'prompt', text: 'hello' })
-    await waitFor(() => transcript.messages.some((m) => m.role === 'agent' && m.text.length > 0))
+    await waitFor(() => toMessages(transcript).some((m) => m.role === 'agent' && m.text.length > 0))
 
-    const agent = transcript.messages.find((m) => m.role === 'agent')
+    const agent = toMessages(transcript).find((m) => m.role === 'agent')
     expect(agent?.text).toBe('echo hello (fake)')
     expect(transcript.status).toBe('idle')
 
@@ -90,7 +90,7 @@ describe('core -> ws -> transcript', () => {
     stream.send({ type: 'prompt', text: 'hello' })
     await waitFor(() => transcript.status === 'error')
 
-    expect(transcript.messages[0]?.text).toBe('partial')
+    expect(toMessages(transcript)[0]?.text).toBe('partial')
     stream.close()
   })
 
@@ -107,9 +107,9 @@ describe('core -> ws -> transcript', () => {
     })
 
     stream.send({ type: 'prompt', text: 'hello' })
-    await waitFor(() => transcript.status === 'idle' && transcript.messages.length > 0)
+    await waitFor(() => transcript.status === 'idle' && toMessages(transcript).length > 0)
 
-    expect(transcript.messages.map((m) => m.text).join('')).toContain('after')
+    expect(toMessages(transcript).map((m) => m.text).join('')).toContain('after')
     stream.close()
   })
 })

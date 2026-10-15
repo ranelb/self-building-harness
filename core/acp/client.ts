@@ -11,8 +11,8 @@
  * of its `schema/schema.json`, not invented.
  */
 import { spawn } from 'node:child_process'
+import type { AgentCapabilities, SessionConfigOption } from '../../shared/protocol.ts'
 import { normalizePermissionRequest, normalizeUpdate, type UiEvent } from '../events.ts'
-import type { SessionConfigOption } from '../../shared/protocol.ts'
 
 const PROTOCOL_VERSION = 1
 
@@ -21,14 +21,6 @@ export interface AcpSessionInfo {
   cwd: string
   title: string
   updatedAt: string
-}
-
-/** What the agent said it can do, from its `initialize` result. */
-export interface AgentCapabilities {
-  image: boolean
-  audio: boolean
-  embeddedContext: boolean
-  fork: boolean
 }
 
 export interface AcpConnection {

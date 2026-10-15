@@ -8,6 +8,9 @@ const ctx: RenderContext = {
   tokens: {},
   host: {
     messages: [],
+    items: [],
+    changedFiles: [],
+    capabilities: { image: false, audio: false, embeddedContext: false, fork: false },
     status: 'idle',
     draft: '',
     pendingPermission: [],
