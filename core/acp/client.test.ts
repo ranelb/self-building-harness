@@ -130,3 +130,20 @@ describe('connectAcp', () => {
     conn.close()
   })
 })
+
+describe('closing', () => {
+  it('does not emit an error when the core closes an in-flight handshake', async () => {
+    // A process that never answers ACP, so `open()` has a request in flight.
+    const conn = connectAcp({
+      command: process.execPath,
+      args: ['-e', 'setTimeout(() => {}, 5000)'],
+      cwd: process.cwd(),
+    })
+    const events = collect(conn)
+    void conn.open()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    conn.close()
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(events.some((event) => event.type === 'error')).toBe(false)
+  })
+})

@@ -4,6 +4,7 @@
  * later phone/PWA client is just another client rather than a second backend.
  */
 import { createServer } from 'node:http'
+import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { WebSocketServer, WebSocket } from 'ws'
@@ -47,6 +48,23 @@ const FIXTURE = resolve(HERE ? resolve(HERE, '..') : process.cwd(), 'test/fixtur
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1'])
 
+/**
+ * Whether a backend id can actually run here.
+ *
+ * A `fake:` backend spawns the scripted fixture; in a packaged core that file is
+ * not on disk, and spawning `process.execPath` would just re-exec the core as a
+ * nested server. Say no instead, so the failure is legible.
+ */
+const isRunnableBackend = (id: string): boolean => {
+  if (id.startsWith('fake:')) return existsSync(FIXTURE)
+  try {
+    resolveBackend(id)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export interface CoreOptions {
   host?: string
   /** 0 picks a free port. */
@@ -85,6 +103,12 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
   }
 
   let backendId = options.backend ?? 'pi'
+  if (!isRunnableBackend(backendId)) {
+    throw new Error(
+      `backend ${backendId} is not runnable here` +
+        (backendId.startsWith('fake:') ? ' (fake backends need the repo test fixture)' : '')
+    )
+  }
   const cwd = options.cwd ?? process.cwd()
   const policy = options.policy ?? DENY_BY_DEFAULT
   const configDir = options.configDir ?? process.env.SBH_CONFIG_DIR ?? join(homedir(), '.config', 'sbh')
@@ -247,13 +271,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
   /** Switch backends by reconnecting; nothing is spawned until it is needed. */
   const switchBackend = (id: string) => {
     // Validate before tearing anything down: an unknown id must not kill the app.
-    if (!id.startsWith('fake:')) {
-      try {
-        resolveBackend(id)
-      } catch {
-        return
-      }
-    }
+    if (!isRunnableBackend(id)) return
     if (id === backendId && conn) return
     conn?.close()
     conn = null

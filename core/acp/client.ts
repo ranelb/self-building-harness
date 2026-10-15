@@ -144,6 +144,8 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
 
   let nextId = 1
   let closed = false
+  /** Set when *we* close the connection: an expected ending is not an error. */
+  let closing = false
   let sessionId: string | null = null
 
   const pending = new Map<number, Pending>()
@@ -225,7 +227,7 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
 
   child.on('error', (err) => {
     closed = true
-    emit({ type: 'error', message: err.message })
+    if (!closing) emit({ type: 'error', message: err.message })
     for (const entry of pending.values()) entry.reject(err)
     pending.clear()
   })
@@ -236,7 +238,10 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
   let handshakeError: Error | null = null
   const fail = (error: Error) => {
     handshakeError = error
-    emit({ type: 'error', message: error.message })
+    // A close we asked for (a backend switch, shutdown) tears down an in-flight
+    // handshake on purpose. Surfacing that as "agent exited" made selecting a
+    // harness look like a crash.
+    if (!closing) emit({ type: 'error', message: error.message })
   }
   const ready = request('initialize', { protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} }).catch(
     fail
@@ -286,7 +291,7 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
         })
         emit({ type: 'turn.finished', stopReason: res?.result?.stopReason ?? 'end_turn' })
       } catch (err) {
-        emit({ type: 'error', message: (err as Error).message })
+        if (!closing) emit({ type: 'error', message: (err as Error).message })
       }
     },
 
@@ -329,6 +334,7 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
     },
 
     close() {
+      closing = true
       closed = true
       try {
         child.kill()

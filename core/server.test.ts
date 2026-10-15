@@ -315,3 +315,9 @@ describe('profiles (surfaces)', () => {
     await rm(dir, { recursive: true, force: true })
   })
 })
+
+describe('backend validation', () => {
+  it('refuses an unknown backend at startup', async () => {
+    await expect(startCore({ port: 0, backend: 'nope' })).rejects.toThrow(/not runnable/)
+  })
+})
