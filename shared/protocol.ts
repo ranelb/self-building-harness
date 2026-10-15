@@ -64,9 +64,19 @@ export type UiEvent =
 /** A pending permission request as the host state carries it. */
 export type PermissionRequest = Extract<UiEvent, { type: 'permission.requested' }>
 
+/**
+ * A prompt attachment, shipped as bytes so the client names no transport.
+ * `data` is base64; the core persists it and builds the ACP content block.
+ */
+export interface Attachment {
+  name: string
+  mimeType: string
+  data: string
+}
+
 /** Client -> core. */
 export type ClientToCore =
-  | { type: 'prompt'; text: string }
+  | { type: 'prompt'; text: string; attachments?: Attachment[] }
   | { type: 'permission'; requestId: string; decision: 'allow' | 'deny' }
   /** Switch the agent backend; the core reconnects. */
   | { type: 'backend'; id: string }
