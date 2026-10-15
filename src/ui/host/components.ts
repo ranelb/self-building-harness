@@ -16,6 +16,8 @@ import {
 } from '../tree/render.ts'
 import { renderMarkdown } from '../tree/markdown.ts'
 import { controlStyle, fieldStyle } from '../atoms/style.ts'
+import type { Attachment } from '../../../shared/protocol.ts'
+import type { TimelineItem } from '../../../shared/ui.ts'
 
 const stream = (el: HTMLElement, node: UiNode): void => {
   // Note: no `data-atom` here. Each component sets its own; a shared helper that
@@ -101,11 +103,96 @@ type Windowed = HTMLElement & { __sbhRendered?: number }
 const nearBottom = (host: HTMLElement): boolean =>
   host.scrollHeight - host.scrollTop - host.clientHeight < 40
 
+const attachmentChip = (attachment: Attachment): HTMLElement => {
+  const chip = document.createElement('span')
+  chip.style.cssText =
+    'display:inline-flex;align-items:center;gap:var(--sbh-space-xs);border:1px solid var(--sbh-color-border);' +
+    'border-radius:var(--sbh-radius-md);padding:2px 6px;font-size:var(--sbh-font-size-sm);' +
+    'color:var(--sbh-color-text-muted);max-width:220px'
+  if (attachment.mimeType.startsWith('image/') && attachment.data) {
+    const image = document.createElement('img')
+    image.src = `data:${attachment.mimeType};base64,${attachment.data}`
+    image.alt = attachment.name
+    image.style.cssText = 'max-height:80px;max-width:200px;border-radius:var(--sbh-radius-sm);display:block'
+    chip.appendChild(image)
+  }
+  const label = document.createElement('span')
+  label.textContent = attachment.name
+  label.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap'
+  chip.appendChild(label)
+  return chip
+}
+
+/** One timeline entry. Model text goes through renderMarkdown, never innerHTML. */
+const renderItem = (item: TimelineItem): HTMLElement => {
+  const wrap = document.createElement('div')
+  wrap.dataset.item = item.kind
+
+  if (item.kind === 'user') {
+    wrap.style.alignSelf = 'flex-end'
+    wrap.style.maxWidth = '80%'
+    const line = document.createElement('div')
+    line.className = 'sbh-markdown'
+    line.appendChild(renderMarkdown(`**you:** ${item.text}`))
+    wrap.appendChild(line)
+    if (item.attachments.length > 0) {
+      const row = document.createElement('div')
+      row.style.cssText = 'display:flex;flex-wrap:wrap;gap:var(--sbh-space-xs);margin-top:var(--sbh-space-xs)'
+      for (const attachment of item.attachments) row.appendChild(attachmentChip(attachment))
+      wrap.appendChild(row)
+    }
+    if (item.superseded) {
+      const mark = document.createElement('div')
+      mark.textContent = 'superseded'
+      mark.style.cssText =
+        'font-size:var(--sbh-font-size-sm);color:var(--sbh-color-text-muted);opacity:.7;' +
+        'font-style:italic;margin-top:var(--sbh-space-xs)'
+      wrap.appendChild(mark)
+    }
+    return wrap
+  }
+
+  if (item.kind === 'agent') {
+    wrap.className = 'sbh-markdown'
+    wrap.appendChild(renderMarkdown(item.text))
+    return wrap
+  }
+
+  if (item.kind === 'thought') {
+    wrap.style.cssText =
+      'border-left:2px solid var(--sbh-color-border);padding-left:var(--sbh-space-sm);' +
+      'color:var(--sbh-color-text-muted);font-size:var(--sbh-font-size-sm);white-space:pre-wrap'
+    wrap.textContent = item.text
+    return wrap
+  }
+
+  // tool
+  wrap.style.cssText =
+    'border:1px solid var(--sbh-color-border);border-radius:var(--sbh-radius-md);' +
+    'background:var(--sbh-color-surface);padding:var(--sbh-space-xs) var(--sbh-space-sm);' +
+    'display:flex;gap:var(--sbh-space-xs);align-items:center'
+  const dot = document.createElement('span')
+  const color =
+    item.status === 'completed'
+      ? 'var(--sbh-color-success)'
+      : item.status === 'failed'
+        ? 'var(--sbh-color-danger)'
+        : 'var(--sbh-color-accent)'
+  dot.style.cssText = `width:7px;height:7px;border-radius:50%;flex:0 0 auto;background:${color}`
+  const title = document.createElement('span')
+  title.textContent = item.title
+  title.style.cssText =
+    'font-family:var(--sbh-font-mono);font-size:var(--sbh-font-size-sm);overflow:hidden;' +
+    'text-overflow:ellipsis;white-space:nowrap'
+  wrap.append(dot, title)
+  return wrap
+}
+
 function paintTranscript(host: Windowed, ctx: RenderContext): void {
-  const messages = ctx.host.messages
-  const rendered = Math.min(messages.length, Math.max(TRANSCRIPT_PAGE, host.__sbhRendered ?? 0))
+  const items = ctx.host.items
+  const rendered = Math.min(items.length, Math.max(TRANSCRIPT_PAGE, host.__sbhRendered ?? 0))
   host.__sbhRendered = rendered
-  const start = messages.length - rendered
+  const start = items.length - rendered
 
   host.replaceChildren()
 
@@ -130,13 +217,10 @@ function paintTranscript(host: Windowed, ctx: RenderContext): void {
     host.appendChild(earlier)
   }
 
-  for (let index = start; index < messages.length; index += 1) {
-    const message = messages[index]
-    if (!message) continue
-    const line = document.createElement('div')
-    line.className = 'sbh-markdown'
-    line.appendChild(renderMarkdown(message.role === 'user' ? `**you:** ${message.text}` : message.text))
-    host.appendChild(line)
+  for (let index = start; index < items.length; index += 1) {
+    const item = items[index]
+    if (!item) continue
+    host.appendChild(renderItem(item))
   }
 
   if (ctx.host.status === 'error' && ctx.host.error) {
@@ -167,6 +251,63 @@ registerComponent({
     const following = nearBottom(host)
     paintTranscript(host, ctx)
     if (following) host.scrollTop = host.scrollHeight
+  },
+})
+
+// --- changed files ---------------------------------------------------------------
+
+/**
+ * The files an `edit` tool touched, grouped by turn. A running record of what the
+ * agent changed, at the end of the conversation.
+ */
+registerComponent({
+  name: 'changedFiles',
+  create() {
+    const el = document.createElement('div')
+    el.setAttribute('data-atom', 'changedFiles')
+    el.style.display = 'none'
+    el.style.flexDirection = 'column'
+    el.style.gap = 'var(--sbh-space-sm)'
+    return el
+  },
+  update(el, _node, ctx) {
+    const host = el as HTMLElement
+    const groups = ctx.host.changedFiles.filter((group) => group.files.length > 0)
+    if (groups.length === 0) {
+      host.style.display = 'none'
+      host.replaceChildren()
+      return
+    }
+    host.style.display = 'flex'
+    host.replaceChildren()
+    for (const group of groups) {
+      const section = document.createElement('div')
+      section.style.cssText = 'display:flex;flex-direction:column;gap:var(--sbh-space-xs)'
+      const heading = document.createElement('div')
+      heading.textContent =
+        groups.length > 1
+          ? `Files changed \u00b7 turn ${group.turn}`
+          : `Files changed \u00b7 ${group.files.length}`
+      heading.style.cssText =
+        'font-size:var(--sbh-font-size-sm);color:var(--sbh-color-text-muted);' +
+        'text-transform:uppercase;letter-spacing:.04em'
+      section.appendChild(heading)
+      const row = document.createElement('div')
+      row.style.cssText = 'display:flex;flex-wrap:wrap;gap:var(--sbh-space-xs)'
+      for (const file of group.files) {
+        const box = document.createElement('div')
+        box.textContent = file.line === undefined ? file.path : `${file.path}:${file.line}`
+        box.title = file.path
+        box.style.cssText =
+          'border:1px solid var(--sbh-color-border);background:var(--sbh-color-surface);' +
+          'border-radius:var(--sbh-radius-md);padding:var(--sbh-space-xs) var(--sbh-space-sm);' +
+          'font-family:var(--sbh-font-mono);font-size:var(--sbh-font-size-sm);max-width:100%;' +
+          'overflow:hidden;text-overflow:ellipsis;white-space:nowrap'
+        row.appendChild(box)
+      }
+      section.appendChild(row)
+      host.appendChild(section)
+    }
   },
 })
 
