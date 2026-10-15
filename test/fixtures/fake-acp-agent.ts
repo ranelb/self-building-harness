@@ -71,12 +71,14 @@ async function runScenario(
         sessionId: SESSION_ID,
         toolCall: { toolCallId: 'tc1', title: 'Run ls', kind: 'execute' },
         options: [
-          { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
-          { optionId: 'deny', name: 'Deny', kind: 'reject_once' },
+          // Deliberately not named 'allow'/'deny': a client that answers with a
+          // literal id instead of selecting by `kind` must fail this scenario.
+          { optionId: 'opt-yes', name: 'Allow', kind: 'allow_once' },
+          { optionId: 'opt-no', name: 'Deny', kind: 'reject_once' },
         ],
       })
       const outcome = reply?.result?.outcome
-      const allowed = outcome?.outcome === 'selected' && outcome?.optionId === 'allow'
+      const allowed = outcome?.outcome === 'selected' && outcome?.optionId === 'opt-yes'
       chunk(allowed ? 'after' : 'denied')
       return
     }
@@ -254,10 +256,17 @@ export function spawnFakeAgent(
             updates.push({ kind: msg.params.update.sessionUpdate, ...msg.params.update })
           } else if (msg.method === 'session/request_permission') {
             // Auto-allow so scenarios that need a permission round-trip complete.
+            // Pick by `kind`, the way a real client must.
+            const options: { optionId: string; kind?: string }[] = Array.isArray(msg.params?.options)
+              ? msg.params.options
+              : []
+            const allow = options.find((o) => o.kind === 'allow_once' || o.kind === 'allow_always')
             send({
               jsonrpc: '2.0',
               id: msg.id,
-              result: { outcome: { outcome: 'selected', optionId: 'allow' } },
+              result: allow
+                ? { outcome: { outcome: 'selected', optionId: allow.optionId } }
+                : { outcome: { outcome: 'cancelled' } },
             })
           } else if (msg.id !== undefined && msg.method === undefined) {
             const resolve = pending.get(msg.id)

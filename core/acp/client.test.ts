@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { connectAcp } from './client.ts'
+import { choosePermissionOption, connectAcp } from './client.ts'
 import { resolveBackend } from '../backends/registry.ts'
 import type { UiEvent } from '../events.ts'
 
@@ -20,8 +20,44 @@ describe('resolveBackend', () => {
     expect(resolveBackend('pi')).toEqual({ command: 'npx', args: ['pi-acp@latest'] })
   })
 
+  it('resolves the goose backend to its native ACP server', () => {
+    expect(resolveBackend('goose')).toEqual({ command: 'goose', args: ['acp'] })
+  })
+
   it('rejects an unknown backend with a named error', () => {
     expect(() => resolveBackend('nope')).toThrow(/UnknownBackend/)
+  })
+})
+
+describe('choosePermissionOption', () => {
+  const byKind = [
+    { optionId: 'opt-yes', kind: 'allow_once' },
+    { optionId: 'opt-always', kind: 'allow_always' },
+    { optionId: 'opt-no', kind: 'reject_once' },
+  ]
+
+  it('selects the allow option by kind, not by a literal id', () => {
+    expect(choosePermissionOption(byKind, 'allow')?.optionId).toBe('opt-yes')
+  })
+
+  it('selects the reject option by kind', () => {
+    expect(choosePermissionOption(byKind, 'deny')?.optionId).toBe('opt-no')
+  })
+
+  it('prefers a one-shot allow over an always-allow', () => {
+    const options = [
+      { optionId: 'once', kind: 'allow_once' },
+      { optionId: 'always', kind: 'allow_always' },
+    ]
+    expect(choosePermissionOption(options, 'allow')?.optionId).toBe('once')
+  })
+
+  it('falls back to a literal id for an older agent', () => {
+    expect(choosePermissionOption([{ optionId: 'allow' }], 'allow')?.optionId).toBe('allow')
+  })
+
+  it('fails closed (null) when no option matches', () => {
+    expect(choosePermissionOption([{ optionId: 'weird', kind: 'reject_once' }], 'allow')).toBeNull()
   })
 })
 

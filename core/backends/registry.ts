@@ -19,6 +19,9 @@ export interface BackendSpec {
 
 const BACKENDS: Record<string, BackendSpec> = {
   pi: { command: 'npx', args: ['pi-acp@latest'] },
+  // goose speaks ACP natively on stdio and needs no npm fetch. Its provider and
+  // API key are configured once (out of band); the core only drives the protocol.
+  goose: { command: 'goose', args: ['acp'] },
 }
 
 export const BACKEND_IDS = Object.keys(BACKENDS)

@@ -37,6 +37,57 @@ interface Pending {
   method: string
 }
 
+interface PermissionOption {
+  optionId: string
+  kind?: string
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v)
+
+/** Read the options an agent offered, ignoring anything malformed. */
+function readPermissionOptions(params: unknown): PermissionOption[] {
+  if (!isRecord(params) || !Array.isArray(params.options)) return []
+  const options: PermissionOption[] = []
+  for (const option of params.options) {
+    if (!isRecord(option) || typeof option.optionId !== 'string') continue
+    options.push(
+      typeof option.kind === 'string'
+        ? { optionId: option.optionId, kind: option.kind }
+        : { optionId: option.optionId }
+    )
+  }
+  return options
+}
+
+const ALLOW_KINDS = ['allow_once', 'allow_always']
+const DENY_KINDS = ['reject_once', 'reject_always']
+
+/**
+ * Pick the option that matches the user's decision.
+ *
+ * The response must name an `optionId` the agent actually offered. A literal
+ * `'allow'` therefore only works against an agent that happens to name its
+ * options that way. Selection is by `kind`, which ACP requires on every option;
+ * the literal ids are a fallback for older agents, and `null` fails closed (the
+ * caller answers `cancelled`).
+ *
+ * Note: goose (v1.54) did not emit a permission request in the `approve` mode
+ * that was probed, so this path is still only exercised by pi-acp and the fake
+ * fixture — the second backend did not widen the gate's coverage.
+ */
+export function choosePermissionOption(
+  options: readonly PermissionOption[],
+  decision: 'allow' | 'deny'
+): PermissionOption | null {
+  const kinds = decision === 'allow' ? ALLOW_KINDS : DENY_KINDS
+  return (
+    options.find((option) => option.kind !== undefined && kinds.includes(option.kind)) ??
+    options.find((option) => option.optionId === decision) ??
+    null
+  )
+}
+
 export function connectAcp(opts: ConnectOptions): AcpConnection {
   const child = spawn(opts.command, opts.args, {
     cwd: opts.cwd,
@@ -53,8 +104,8 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
   let sessionId: string | null = null
 
   const pending = new Map<number, Pending>()
-  /** UI-facing request id -> the JSON-RPC id the agent actually sent. */
-  const permissionIds = new Map<string, unknown>()
+  /** UI-facing request id -> the JSON-RPC id and the options the agent offered. */
+  const permissionRequests = new Map<string, { id: unknown; options: PermissionOption[] }>()
 
   const send = (obj: unknown) => {
     if (closed) return
@@ -74,7 +125,7 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
       const requestId = String(msg.id)
       const event = normalizePermissionRequest(msg.params, requestId)
       if (event && event.type === 'permission.requested') {
-        permissionIds.set(requestId, msg.id)
+        permissionRequests.set(requestId, { id: msg.id, options: readPermissionOptions(msg.params) })
         emit(event)
       } else {
         // Never leave the agent hanging on an unparseable request.
@@ -172,18 +223,16 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
     },
 
     async respondPermission(requestId, decision) {
-      const rawId = permissionIds.get(requestId)
-      if (rawId === undefined) return
-      permissionIds.delete(requestId)
+      const entry = permissionRequests.get(requestId)
+      if (!entry) return
+      permissionRequests.delete(requestId)
+      const option = choosePermissionOption(entry.options, decision)
       send({
         jsonrpc: '2.0',
-        id: rawId,
-        result: {
-          outcome:
-            decision === 'allow'
-              ? { outcome: 'selected', optionId: 'allow' }
-              : { outcome: 'cancelled' },
-        },
+        id: entry.id,
+        result: option
+          ? { outcome: { outcome: 'selected', optionId: option.optionId } }
+          : { outcome: { outcome: 'cancelled' } },
       })
     },
 
