@@ -27,6 +27,7 @@ build() {
   # refused". `--no-bundle` skips the deb/rpm/appimage step. Its beforeBuildCommand
   # (`npm run build`) also compiles the core sidecar into src-tauri/binaries/.
   npx tauri build --no-bundle
+  npm run build:phone
 }
 
 package() {
@@ -38,6 +39,11 @@ package() {
   install -Dm755 src-tauri/binaries/sbh-core "$pkgdir/usr/lib/SBH/binaries/sbh-core"
   # The operator CLI for the capability manifest (SBH never elevates itself).
   install -Dm755 packaging/sbh-policy "$pkgdir/usr/bin/sbh-policy"
+  # The companion phone server: serves the built client, proxies the loopback core.
+  install -Dm755 packaging/sbh-phone "$pkgdir/usr/bin/sbh-phone"
+  install -d "$pkgdir/usr/lib/SBH/phone"
+  cp -a dist-phone/. "$pkgdir/usr/lib/SBH/phone/"
+  install -Dm644 packaging/sbh-phone.service "$pkgdir/usr/lib/systemd/user/sbh-phone.service"
   # Root-owned, disabled by default; `backup` keeps your edits across upgrades.
   install -Dm644 examples/capabilities.toml "$pkgdir/etc/sbh/capabilities.toml"
 

@@ -3,9 +3,8 @@
  *
  * The core stays loopback (it spawns agents and answers permissions; it has no
  * business on a network). A phone cannot reach loopback and cannot be served the
- * app's static bundle by the core anyway, so this small server does exactly two
- * things: serve the built client, and reverse-proxy the core's HTTP routes and
- * WebSocket to it.
+ * app's static bundle by the core anyway, so this does exactly two things: serve
+ * the built client, and reverse-proxy the core's HTTP routes and WebSocket to it.
  *
  * It binds loopback by default. How you reach it — Tailscale Serve, a reverse
  * proxy, an ssh tunnel — is your business; SBH names no transport, the same way it
@@ -16,16 +15,16 @@
  * widen the capability boundary: there is nothing here to grant, and the manifest
  * is edited by a root-side CLI, not over HTTP.
  *
- * Run:  node --experimental-strip-types core/phone-server.ts
+ * `sbh-core phone` (the package installs `sbh-phone`); in a checkout, `npm run phone`.
  */
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { WebSocket, WebSocketServer } from 'ws'
+import { readCorePort } from './runtime.ts'
 
 export interface PhoneServerOptions {
-  /** The core's WebSocket URL; its HTTP host/port are derived from it. */
+  /** The core's WebSocket URL. Unset: discover the running core's port. */
   coreUrl?: string
   /** Where to bind. Defaults to loopback — put a TLS proxy in front for a phone. */
   host?: string
@@ -38,6 +37,7 @@ export interface PhoneServerOptions {
 }
 
 export interface PhoneServer {
+  host: string
   port: number
   close(): Promise<void>
 }
@@ -74,15 +74,25 @@ export function injectGlobals(html: string, profile: string): string {
 }
 
 export async function startPhoneServer(options: PhoneServerOptions = {}): Promise<PhoneServer> {
-  const coreUrl = new URL(options.coreUrl ?? process.env.SBH_CORE_URL ?? 'ws://127.0.0.1:8787/ws')
-  const coreHost = coreUrl.hostname
-  const corePort = Number(coreUrl.port || (coreUrl.protocol === 'wss:' ? 443 : 80))
+  const configuredCore = options.coreUrl ?? process.env.SBH_CORE_URL ?? null
   const host = options.host ?? process.env.SBH_PHONE_HOST ?? '127.0.0.1'
   const profile = options.profile ?? process.env.SBH_PHONE_PROFILE ?? 'phone'
 
   const here = (import.meta as ImportMeta & { dirname?: string }).dirname
   const root = here ? resolve(here, '..') : process.cwd()
   const distRoot = resolve(options.distDir ?? process.env.SBH_PHONE_DIST ?? `${root}/dist-phone`)
+
+  /** The core to proxy to: a fixed URL, or whatever the running core advertises. */
+  const resolveCore = async (): Promise<{ host: string; port: number; wsUrl: string }> => {
+    if (configuredCore) {
+      const url = new URL(configuredCore)
+      const port = Number(url.port || (url.protocol === 'wss:' ? 443 : 80))
+      return { host: url.hostname, port, wsUrl: configuredCore }
+    }
+    const port = await readCorePort()
+    if (!port) throw new Error('no core')
+    return { host: '127.0.0.1', port, wsUrl: `ws://127.0.0.1:${port}/ws` }
+  }
 
   /** A path with no file extension is an app route, not an asset. */
   const textFallback = (pathname: string): boolean => extname(pathname) === ''
@@ -102,14 +112,14 @@ export async function startPhoneServer(options: PhoneServerOptions = {}): Promis
       body = null
     }
 
-    // Unresolved path or a miss with an HTML Accept: the app's entry.
+    // An unresolved path that looks like an app route, with an HTML Accept.
     if (body === null) {
       if (textFallback(pathname)) {
         try {
           body = await readFile(resolve(distRoot, 'index.html'))
           path = resolve(distRoot, 'index.html')
         } catch {
-          /* fall through to 404 */
+          /* fall through */
         }
       }
       if (body === null || !acceptsHtml) {
@@ -125,22 +135,29 @@ export async function startPhoneServer(options: PhoneServerOptions = {}): Promis
   }
 
   const proxyHttp = (req: IncomingMessage, res: ServerResponse): void => {
-    const headers = { ...req.headers, host: `${coreHost}:${corePort}` }
-    // Server-to-server: never forward the browser's Origin, or the core's origin
-    // guard would (correctly) refuse the phone's.
-    delete headers.origin
-    const upstream = httpRequest(
-      { host: coreHost, port: corePort, path: req.url ?? '/', method: req.method, headers },
-      (response) => {
-        res.writeHead(response.statusCode ?? 502, response.headers)
-        response.pipe(res)
-      }
-    )
-    upstream.on('error', () => {
-      res.writeHead(502, { 'content-type': 'text/plain' })
-      res.end('core unreachable')
-    })
-    req.pipe(upstream)
+    void resolveCore()
+      .then((core) => {
+        const headers = { ...req.headers, host: `${core.host}:${core.port}` }
+        // Server-to-server: never forward the browser's Origin, or the core's origin
+        // guard would (correctly) refuse the phone's.
+        delete headers.origin
+        const upstream = httpRequest(
+          { host: core.host, port: core.port, path: req.url ?? '/', method: req.method, headers },
+          (response) => {
+            res.writeHead(response.statusCode ?? 502, response.headers)
+            response.pipe(res)
+          }
+        )
+        upstream.on('error', () => {
+          if (!res.headersSent) res.writeHead(502, { 'content-type': 'text/plain' })
+          res.end('core unreachable')
+        })
+        req.pipe(upstream)
+      })
+      .catch(() => {
+        res.writeHead(502, { 'content-type': 'text/plain' })
+        res.end('no core running')
+      })
   }
 
   const server = createServer((req, res) => {
@@ -156,34 +173,38 @@ export async function startPhoneServer(options: PhoneServerOptions = {}): Promis
       socket.destroy()
       return
     }
-    const upstream = new WebSocket(coreUrl)
-    upstream.on('open', () => {
-      wss.handleUpgrade(req, socket, head, (client) => {
-        const shutdown = (): void => {
-          try {
-            client.close()
-          } catch {
-            /* already closing */
-          }
-          try {
-            upstream.close()
-          } catch {
-            /* already closing */
-          }
-        }
-        client.on('message', (data, binary) => {
-          if (upstream.readyState === WebSocket.OPEN) upstream.send(data, { binary })
+    void resolveCore()
+      .then((core) => {
+        const upstream = new WebSocket(core.wsUrl)
+        upstream.on('open', () => {
+          wss.handleUpgrade(req, socket, head, (client) => {
+            const shutdown = (): void => {
+              try {
+                client.close()
+              } catch {
+                /* already closing */
+              }
+              try {
+                upstream.close()
+              } catch {
+                /* already closing */
+              }
+            }
+            client.on('message', (data, binary) => {
+              if (upstream.readyState === WebSocket.OPEN) upstream.send(data, { binary })
+            })
+            upstream.on('message', (data, binary) => {
+              if (client.readyState === WebSocket.OPEN) client.send(data, { binary })
+            })
+            client.on('close', shutdown)
+            client.on('error', shutdown)
+            upstream.on('close', shutdown)
+            upstream.on('error', shutdown)
+          })
         })
-        upstream.on('message', (data, binary) => {
-          if (client.readyState === WebSocket.OPEN) client.send(data, { binary })
-        })
-        client.on('close', shutdown)
-        client.on('error', shutdown)
-        upstream.on('close', shutdown)
-        upstream.on('error', shutdown)
+        upstream.on('error', () => socket.destroy())
       })
-    })
-    upstream.on('error', () => socket.destroy())
+      .catch(() => socket.destroy())
   })
 
   await new Promise<void>((resolveListen, reject) => {
@@ -195,6 +216,7 @@ export async function startPhoneServer(options: PhoneServerOptions = {}): Promis
   const port = typeof address === 'object' && address !== null ? address.port : 0
 
   return {
+    host,
     port,
     async close() {
       for (const client of wss.clients) client.terminate()
@@ -205,11 +227,13 @@ export async function startPhoneServer(options: PhoneServerOptions = {}): Promis
   }
 }
 
-const isEntrypoint = process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1]
-if (isEntrypoint) {
+/** Start the phone server and keep the process alive until a signal arrives. */
+export async function runPhoneServer(): Promise<void> {
   const server = await startPhoneServer()
+  const core = process.env.SBH_CORE_URL ?? 'the running core (discovered)'
   process.stdout.write(
-    `sbh phone server listening on http://127.0.0.1:${server.port}/ (core: ${process.env.SBH_CORE_URL ?? 'ws://127.0.0.1:8787/ws'}, profile: ${process.env.SBH_PHONE_PROFILE ?? 'phone'})\n`
+    `sbh phone server listening on http://${server.host}:${server.port}/ ` +
+      `(core: ${core}, profile: ${process.env.SBH_PHONE_PROFILE ?? 'phone'})\n`
   )
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.on(signal, () => {

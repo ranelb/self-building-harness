@@ -1,0 +1,13 @@
+[Unit]
+Description=SBH phone server (serves the phone client, proxies the loopback core)
+Documentation=https://github.com/ranelb/self-building-harness
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/sbh-phone
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

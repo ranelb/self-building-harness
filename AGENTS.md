@@ -318,9 +318,14 @@ has no CORS story.
 - It has **no endpoints of its own** beyond static files and the proxy. That is
   what keeps "trust the phone" from becoming "the phone can grant": there is
   nothing to grant, and the manifest is edited by `sbh-policy`, not over HTTP.
-- The core must be reachable: run it on a fixed port (`SBH_PORT=8787`), or pin the
-  desktop app's core with an ambient `SBH_PORT` (the shell passes it through now).
+- The core must be reachable. `sbh-core` **advertises its port** in
+  `~/.local/state/sbh/core.json` and the phone server re-reads it per request, so a
+  core started by the desktop app (random port) is found automatically, and a core
+  restart on a new port just works. `SBH_CORE_URL` overrides discovery.
+- Installed as `sbh-phone` (a wrapper over `sbh-core phone`) plus
+  `/usr/lib/systemd/user/sbh-phone.service`; the wrapper sets `SBH_PHONE_DIST` to
+  `/usr/lib/SBH/phone`.
 
-Env: `SBH_CORE_URL` (default `ws://127.0.0.1:8787/ws`), `SBH_PHONE_PORT` (8788),
-`SBH_PHONE_HOST` (loopback), `SBH_PHONE_DIST` (`dist-phone`), `SBH_PHONE_PROFILE`
-(`phone`).
+Env: `SBH_CORE_URL` (default: discover the running core), `SBH_PHONE_PORT` (8788),
+`SBH_PHONE_HOST` (loopback), `SBH_PHONE_DIST` (`dist-phone` in a checkout,
+`/usr/lib/SBH/phone` installed), `SBH_PHONE_PROFILE` (`phone`).

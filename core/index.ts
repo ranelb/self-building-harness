@@ -1,27 +1,37 @@
 /**
- * Core entrypoint. `npm run core`, or `sbh-core policy …` for the operator CLI.
+ * Core entrypoint. One binary, three jobs:
+ *
+ *   sbh-core                 the server (spawned by the window)
+ *   sbh-core policy …        the root-side capability manifest CLI
+ *   sbh-core phone           the companion phone server
  *
  * Binds loopback only; the agent channel behind this has a shell.
  */
 import { startCore } from './server.ts'
 import { runPolicyCli } from './policy.ts'
+import { runPhoneServer } from './phone-server.ts'
+import { clearCoreInfo, writeCoreInfo } from './runtime.ts'
 
-// One binary, two jobs: `policy` is the root-side manifest editor, everything else
-// is the server. Keeps the packaged sidecar a single artifact.
-if (process.argv[2] === 'policy') {
+const command = process.argv[2]
+
+if (command === 'policy') {
   process.exit(await runPolicyCli(process.argv.slice(3)))
-}
+} else if (command === 'phone') {
+  // Serves the phone client and proxies this machine's core; never returns.
+  await runPhoneServer()
+} else {
+  const port = Number(process.env.SBH_PORT ?? 0)
+  const backend = process.env.SBH_BACKEND ?? 'pi'
+  const cwd = process.env.SBH_CWD ?? process.cwd()
 
-const port = Number(process.env.SBH_PORT ?? 0)
-const backend = process.env.SBH_BACKEND ?? 'pi'
-const cwd = process.env.SBH_CWD ?? process.cwd()
+  const core = await startCore({ port, backend, cwd })
+  await writeCoreInfo({ port: core.port, backend })
 
-const core = await startCore({ port, backend, cwd })
+  process.stdout.write(`sbh core listening on ws://127.0.0.1:${core.port}/ws (backend: ${backend})\n`)
 
-process.stdout.write(`sbh core listening on ws://127.0.0.1:${core.port}/ws (backend: ${backend})\n`)
-
-for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-  process.on(signal, () => {
-    void core.close().then(() => process.exit(0))
-  })
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.on(signal, () => {
+      void clearCoreInfo().then(() => core.close()).then(() => process.exit(0))
+    })
+  }
 }

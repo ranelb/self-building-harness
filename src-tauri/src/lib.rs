@@ -45,7 +45,7 @@ fn core_command(app: &tauri::AppHandle) -> (String, Vec<String>) {
 }
 
 fn spawn_core(command: String, args: Vec<String>) -> (String, Child) {
-  let child = Command::new(&command)
+  let mut child = Command::new(&command)
     .args(&args)
     // 0 asks the OS for a free port; the core prints the one it got. An ambient
     // SBH_PORT pins it, which is how the companion phone server finds the core.

@@ -1,0 +1,9 @@
+#!/bin/sh
+# SBH phone server — serves the phone client and reverse-proxies this machine's
+# loopback core.
+#
+# It binds loopback only. Front it with something that terminates TLS (for example
+# `tailscale serve`) so the browser gets a secure context; SBH names no transport.
+: "${SBH_PHONE_DIST:=/usr/lib/SBH/phone}"
+export SBH_PHONE_DIST
+exec /usr/lib/SBH/binaries/sbh-core phone "$@"

@@ -81,6 +81,19 @@ needs. **SBH names no transport** — Tailscale, a reverse proxy, an ssh tunnel 
 all the same to it. It has no endpoints beyond static files and the proxy, so it
 cannot widen the capability boundary.
 
+**Installed**, it is `sbh-phone` plus a systemd user unit:
+
+```bash
+systemctl --user enable --now sbh-phone     # serve at http://127.0.0.1:8788/
+sudo tailscale serve --bg 8788              # ...or whatever terminates TLS
+```
+
+The server **discovers the running core's port** (`~/.local/state/sbh/core.json`,
+written by the core), so there is nothing to configure; point `SBH_CORE_URL` at a
+core elsewhere if you want to. There is no auth: it relies on the network for
+access control, so front it with something that does (a tailnet, a tunnel) rather
+than exposing the port.
+
 ## Trust model
 
 The UI is agent-authored, so an agent-authored permission card can look like

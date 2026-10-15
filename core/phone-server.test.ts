@@ -103,3 +103,25 @@ describe('phone server', () => {
     ws.close()
   })
 })
+
+describe('core discovery', () => {
+  it('finds the core from the port it advertises', async () => {
+    const fake = await fakeCore()
+    core = fake.server
+    const state = await mkdtemp(join(tmpdir(), 'sbh-state-'))
+    const previousState = process.env.SBH_STATE_DIR
+    const previousCore = process.env.SBH_CORE_URL
+    process.env.SBH_STATE_DIR = state
+    delete process.env.SBH_CORE_URL
+    await writeFile(join(state, 'core.json'), JSON.stringify({ port: fake.port }))
+
+    dir = await builtClient()
+    phone = await startPhoneServer({ distDir: dir, port: 0 })
+    expect(await fetch(`http://127.0.0.1:${phone.port}/health`).then((r) => r.json())).toEqual({ ok: true })
+
+    if (previousState === undefined) delete process.env.SBH_STATE_DIR
+    else process.env.SBH_STATE_DIR = previousState
+    if (previousCore !== undefined) process.env.SBH_CORE_URL = previousCore
+    await rm(state, { recursive: true, force: true })
+  })
+})
