@@ -59,6 +59,7 @@ export type UiEvent =
     }
   | { type: 'turn.started' }
   | { type: 'turn.finished'; stopReason: string }
+  | { type: 'session.reset'; reason: 'new' | 'fork' | 'resume' }
   | { type: 'error'; message: string }
 
 /** A pending permission request as the host state carries it. */
@@ -78,6 +79,7 @@ export interface Attachment {
 export type ClientToCore =
   | { type: 'prompt'; text: string; attachments?: Attachment[] }
   | { type: 'cancel' }
+  | { type: 'session.new' }
   | { type: 'permission'; requestId: string; decision: 'allow' | 'deny' }
   /** Switch the agent backend; the core reconnects. */
   | { type: 'backend'; id: string }

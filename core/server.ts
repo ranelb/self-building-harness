@@ -293,6 +293,18 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     void ensureConnection().open()
   }
 
+  const startNewSession = () => {
+    // Settle the in-flight turn before tearing the connection down, so a cancelled
+    // turn is never attributed to the session the client has stopped showing.
+    void conn?.cancel().catch(() => {})
+    conn?.close()
+    conn = null
+    resumeTarget = null
+    configOptions = []
+    void ensureConnection().open()
+    broadcast({ type: 'session.reset', reason: 'new' })
+  }
+
   const toUiSession = (session: SessionSummary) => ({
     id: session.id,
     cwd: session.cwd,
@@ -504,6 +516,11 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
 
       if (msg.type === 'cancel') {
         void ensureConnection().cancel()
+        return
+      }
+
+      if (msg.type === 'session.new') {
+        startNewSession()
         return
       }
 

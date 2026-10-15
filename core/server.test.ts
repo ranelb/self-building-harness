@@ -110,6 +110,41 @@ describe('core server', () => {
     expect(finished.event.stopReason).toBe('cancelled')
     ws.close()
   })
+
+  it('session.new starts a fresh session and broadcasts session.reset', async () => {
+    core = await startCore({ port: 0, backend: 'fake:happy' })
+    const ws = new WebSocket(`ws://127.0.0.1:${core.port}/ws`)
+    const messages: any[] = []
+    await once(ws, 'open')
+    ws.on('message', (data) => messages.push(JSON.parse(String(data))))
+    ws.send(JSON.stringify({ type: 'session.new' }))
+
+    await waitFor(() => messages.some((m) => m.event?.type === 'session.reset'))
+    expect(messages.find((m) => m.event?.type === 'session.reset').event.reason).toBe('new')
+
+    // The fresh session still streams, i.e. the connection was replaced, not lost.
+    ws.send(JSON.stringify({ type: 'prompt', text: 'again' }))
+    await waitFor(() =>
+      messages.some((m) => m.event?.type === 'chunk' && m.event.text.includes('again'))
+    )
+    ws.close()
+  })
+
+  it('session.new during a streaming turn does not surface an error', async () => {
+    core = await startCore({ port: 0, backend: 'fake:cancel' })
+    const ws = new WebSocket(`ws://127.0.0.1:${core.port}/ws`)
+    const messages: any[] = []
+    await once(ws, 'open')
+    ws.on('message', (data) => messages.push(JSON.parse(String(data))))
+    ws.send(JSON.stringify({ type: 'prompt', text: 'hi' }))
+
+    await waitFor(() => messages.some((m) => m.event?.type === 'chunk'))
+    ws.send(JSON.stringify({ type: 'session.new' }))
+    await waitFor(() => messages.some((m) => m.event?.type === 'session.reset'))
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    expect(messages.some((m) => m.event?.type === 'error')).toBe(false)
+    ws.close()
+  })
 })
 
 describe('origin guard', () => {
