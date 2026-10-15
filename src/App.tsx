@@ -8,7 +8,6 @@ import { connectStream, type Stream } from './ui/state/stream.ts'
 import {
   applyEvent,
   empty,
-  fromTurns,
   resolvePermission,
   withUserMessage,
   type Transcript,
@@ -20,6 +19,24 @@ const DEFAULT_CORE_URL =
   (globalThis as { __SBH_CORE_URL__?: string }).__SBH_CORE_URL__ ??
   import.meta.env.VITE_CORE_URL ??
   'ws://127.0.0.1:8787/ws'
+
+/** Read a `{ value, options }` picker out of the state channel, or fall back. */
+const asPicker = (
+  value: unknown,
+  fallback: { value: string; options: { value: string; label: string }[] }
+): { value: string; options: { value: string; label: string }[] } => {
+  if (typeof value !== 'object' || value === null) return fallback
+  const candidate = value as { value?: unknown; options?: unknown }
+  if (typeof candidate.value !== 'string' || !Array.isArray(candidate.options)) return fallback
+  const options = candidate.options.filter(
+    (option): option is { value: string; label: string } =>
+      typeof option === 'object' &&
+      option !== null &&
+      typeof (option as { value?: unknown }).value === 'string' &&
+      typeof (option as { label?: unknown }).label === 'string'
+  )
+  return { value: candidate.value, options }
+}
 
 export interface AppProps {
   coreUrl?: string
@@ -119,8 +136,8 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
     draft,
     pendingPermission: transcript.pendingPermission,
     notices: components?.failed.map((failure) => `${failure.name} (${failure.error})`) ?? [],
-    harness: { value: 'pi', options: [{ value: 'pi', label: 'Pi' }] },
-    model: { value: 'default', options: [{ value: 'default', label: 'Default' }] },
+    harness: asPicker(data.harness, { value: 'pi', options: [{ value: 'pi', label: 'Pi' }] }),
+    model: asPicker(data.model, { value: '', options: [] }),
     sessions,
     data,
   }
@@ -164,18 +181,26 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
           return
         }
 
+        case 'harness.change': {
+          // The core reconnects the ACP session with the new backend.
+          stream.current?.send({ type: 'backend', id: String(props?.value ?? '') })
+          return
+        }
+
+        case 'model.change': {
+          stream.current?.send({ type: 'model', id: String(props?.value ?? '') })
+          return
+        }
+
         case 'session.open': {
-          const base = httpBaseFromWsUrl(coreUrl)
           const id = String(props?.id ?? '')
-          if (!base || !id) return
-          // Viewing only. The agent keeps its own session; resuming one is a core
-          // capability that does not exist yet, and this says so rather than
-          // pretending otherwise.
-          void fetch(`${base}/sessions/${encodeURIComponent(id)}`)
-            .then((response) => (response.ok ? response.json() : null))
-            .then((detail: { turns?: { role: 'user' | 'assistant'; text: string }[] } | null) => {
-              if (detail?.turns) setTranscript(fromTurns(detail.turns))
-            })
+          if (!id) return
+          // Resuming replaces what is on screen: clear it, then let the agent's
+          // replayed events rebuild the conversation. The agent is now attached to
+          // this session, so the next message continues it rather than starting one.
+          setTranscript(empty())
+          const session = sessions.find((s) => s.id === id)
+          stream.current?.send({ type: 'session.resume', id, cwd: session?.cwd ?? '' })
           return
         }
 

@@ -73,6 +73,22 @@ export function applyEvent(state: Transcript, event: UiEvent): Transcript {
       }
     }
 
+    case 'user.chunk': {
+      // Only replayed history carries these; a live turn's user message was added
+      // by the composer, so this cannot duplicate it.
+      const previous = state.messages[state.messages.length - 1]
+      if (previous && previous.role === 'user') {
+        const messages = state.messages.slice()
+        messages[messages.length - 1] = { ...previous, text: previous.text + event.text }
+        return { ...state, messages }
+      }
+      return {
+        ...state,
+        status: 'idle',
+        messages: [...state.messages, { id: nextId(), role: 'user', text: event.text }],
+      }
+    }
+
     case 'turn.finished':
       return { ...state, status: 'idle' }
 

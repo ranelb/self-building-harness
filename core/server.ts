@@ -345,6 +345,10 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     // A fresh client needs the current pickers before it asks anything.
     socket.send(JSON.stringify({ type: 'state', key: 'harness', value: harnessState() }))
     socket.send(JSON.stringify({ type: 'state', key: 'model', value: modelState() }))
+    // The model list only arrives with a session (`session/new` carries
+    // `configOptions`), so open one now. pi does not write a session file until
+    // the first message; goose does create an empty row.
+    void ensureConnection().open()
 
     socket.on('message', (raw) => {
       let msg: any

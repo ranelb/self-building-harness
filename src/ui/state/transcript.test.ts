@@ -58,3 +58,27 @@ describe('resolvePermission', () => {
     expect(state.pendingPermission).toEqual([{ requestId: 'r2', title: 'two' }])
   })
 })
+
+describe('replay (user.chunk)', () => {
+  it('rebuilds a replayed conversation as alternating messages', () => {
+    let s = empty()
+    s = applyEvent(s, { type: 'user.chunk', text: 'question' })
+    s = applyEvent(s, { type: 'chunk', text: 'ans' })
+    s = applyEvent(s, { type: 'chunk', text: 'wer' })
+    s = applyEvent(s, { type: 'user.chunk', text: 'follow up' })
+    s = applyEvent(s, { type: 'chunk', text: 'reply' })
+    expect(s.messages.map((m) => `${m.role}:${m.text}`)).toEqual([
+      'user:question',
+      'agent:answer',
+      'user:follow up',
+      'agent:reply',
+    ])
+  })
+
+  it('coalesces consecutive user chunks of one message', () => {
+    let s = applyEvent(empty(), { type: 'user.chunk', text: 'a' })
+    s = applyEvent(s, { type: 'user.chunk', text: 'b' })
+    expect(s.messages).toHaveLength(1)
+    expect(s.messages[0]).toMatchObject({ role: 'user', text: 'ab' })
+  })
+})
