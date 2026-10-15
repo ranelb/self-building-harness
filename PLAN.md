@@ -134,3 +134,14 @@ the proxy, which is what keeps a trusted phone from meaning a phone that can wid
 the capability boundary. (And the alternative — putting the core itself on the
 tailnet — would expose the process that spawns agents and answers permissions, and
 still wouldn't serve the client bundle.)
+
+### The transcript is an ordered timeline, and the core carries the rest
+
+The transcript is a list of ordered items (user, agent, thought, tool), not a flat
+message list, so reasoning and tool calls sit where they happened. The core forwards
+`tool_call_update` (with `kind`, `locations`, diffs) instead of dropping it, which is
+what makes a changed-files panel possible. Edit is honest about the protocol: ACP has
+no fork point and pi does not implement `session/fork`, so on pi an edit prefills the
+composer and dims the superseded turn; the fork path exists for a backend that offers
+one. Attachments travel as bytes and are persisted by the core, which maps them to an
+image block, embedded text, or a file link — the frontend names no transport.

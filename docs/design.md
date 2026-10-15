@@ -197,6 +197,23 @@ needs no Node runtime. The shell resolves it from the resource directory. A loca
 Arch package (`packaging/PKGBUILD`) installs `sbh`, `sbh-policy`, the core and a
 disabled root manifest at system paths; a `.deb` builds for Debian-family.
 
+## The transcript as a timeline, and the plumbing it needed
+
+Earlier the transcript was a flat list of messages, which is why chain-of-thought
+and tool calls were invisible: the reducer never kept them. It is now an ordered
+timeline of items (user, agent, thought, tool), and the core forwards
+`tool_call_update` with `kind` and `locations` so an `edit` call can be turned into
+a changed-files list. A live user message comes only through `host.messages` (a live
+turn emits no `user.chunk`), so the timeline is built on the host state, not the raw
+stream.
+
+Edit carries an honest limitation: ACP has no fork point, and pi does not implement
+`session/fork`. So on pi, editing a prompt prefills the composer and dims the
+superseded turn — the agent still sees the original — while the core's fork path
+lights up for a backend that offers one. Attachments are shipped as bytes, persisted
+by the core, and mapped to an ACP image block, embedded text, or a file link; a PDF
+is handed to the harness, because ACP cannot inline it and SBH does not parse it.
+
 ## Not in scope (decided, not forgotten)
 
 - **Mobile** — the next piece, and the reason the core is loopback-first. It is a
