@@ -351,71 +351,124 @@ makePicker('modelPicker', 'model', 'model.change')
 
 // --- sessions sidebar ------------------------------------------------------------
 
+/** Query lives on the element so a host re-render cannot wipe what you typed. */
+type SessionsHost = HTMLElement & { __query?: string }
+
+function paintSessions(list: HTMLElement, ctx: RenderContext, query: string): void {
+  list.replaceChildren()
+  const needle = query.trim().toLowerCase()
+  const sessions = needle
+    ? ctx.host.sessions.filter(
+        (session) =>
+          (session.title || '').toLowerCase().includes(needle) ||
+          session.cwd.toLowerCase().includes(needle)
+      )
+    : ctx.host.sessions
+
+  if (sessions.length === 0) {
+    const empty = document.createElement('div')
+    empty.textContent = needle ? 'no matches' : 'none yet'
+    empty.style.cssText = 'font-size:var(--sbh-font-size-sm);color:var(--sbh-color-text-muted)'
+    list.appendChild(empty)
+    return
+  }
+
+  for (const session of sessions) {
+    const button = document.createElement('button')
+    button.dataset.session = session.id
+    button.textContent = session.title || '(untitled)'
+    button.title = `${session.cwd}\n${session.updatedAt}`
+    button.style.cssText = [
+      'display:block',
+      'width:100%',
+      // The fix: a flex column shrinks its children to fit, so 50 sessions became
+      // 50 hairlines instead of a scrolling list. Keep each row at its own height.
+      'flex-shrink:0',
+      'text-align:left',
+      'cursor:pointer',
+      'border:1px solid var(--sbh-color-border)',
+      'background:var(--sbh-color-surface)',
+      'color:var(--sbh-color-text)',
+      'border-radius:var(--sbh-radius-md)',
+      'padding:var(--sbh-space-xs) var(--sbh-space-sm)',
+      'font-family:var(--sbh-font-sans)',
+      'font-size:var(--sbh-font-size-sm)',
+      'white-space:nowrap',
+      'overflow:hidden',
+      'text-overflow:ellipsis',
+    ].join(';')
+    button.addEventListener('click', () => ctx.dispatch('session.open', { id: session.id }))
+    list.appendChild(button)
+  }
+}
+
 registerComponent({
   name: 'sessions',
-  create(node) {
-    const el = document.createElement('div')
+  create(node, ctx) {
+    const el = document.createElement('div') as SessionsHost
     el.setAttribute('data-atom', 'sessions')
     el.style.display = 'flex'
     el.style.flexDirection = 'column'
     el.style.gap = 'var(--sbh-space-xs)'
-    el.style.overflowY = 'auto'
     el.style.minHeight = '0'
-    // `flex: 0 0 <width>`, not `width`: a flex child with a growing sibling is
-    // free to shrink, which squeezed the sidebar to ~60px and ellipsised every
-    // title to uselessness.
-    el.style.flex = `0 0 ${str(node.props?.width, '240px')}`
-    el.setAttribute('data-width', str(node.props?.width, '240px'))
+    // `overflow: hidden`, not `auto`: the *list* scrolls, the sidebar does not, so a
+    // long list cannot drag the heading and the filter box off the top.
+    el.style.overflow = 'hidden'
+    // `flex: 0 0 <width>`, not `width`: a flex child with a growing sibling is free
+    // to shrink, which once squeezed the sidebar to ~60px.
+    const width = str(node.props?.width, '240px')
+    el.style.flex = `0 0 ${width}`
+    el.setAttribute('data-width', width)
     applyLayout(el, node)
+
+    const heading = document.createElement('div')
+    heading.setAttribute('data-session-heading', '')
+    heading.style.cssText =
+      'flex-shrink:0;font-size:var(--sbh-font-size-sm);color:var(--sbh-color-text-muted);padding:var(--sbh-space-xs) 0'
+    el.appendChild(heading)
+
+    const search = document.createElement('input')
+    search.setAttribute('data-session-filter', '')
+    search.type = 'search'
+    search.placeholder = 'Filter chats\u2026'
+    fieldStyle(search)
+    search.style.flexShrink = '0'
+    search.style.borderRadius = 'var(--sbh-radius-full)'
+    search.style.fontSize = 'var(--sbh-font-size-sm)'
+    search.addEventListener('input', () => {
+      el.__query = search.value
+      const live = getLive(el)
+      const list = el.querySelector<HTMLElement>('[data-session-list]')
+      if (list && live) paintSessions(list, live.ctx, el.__query ?? '')
+    })
+    el.appendChild(search)
+
+    const list = document.createElement('div')
+    list.setAttribute('data-session-list', '')
+    list.style.cssText =
+      'flex:1 1 auto;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:var(--sbh-space-xs)'
+    el.appendChild(list)
+
+    el.__query = ''
+    setLive(el, node, ctx)
     return el
   },
   update(el, node, ctx) {
-    const host = el as HTMLElement
+    const host = el as SessionsHost
+    setLive(host, node, ctx)
     const width = str(node.props?.width, '240px')
     if (host.dataset.width !== width) {
       host.style.flex = `0 0 ${width}`
       host.dataset.width = width
     }
     applyLayout(host, node)
-    host.replaceChildren()
 
-    const heading = document.createElement('div')
-    heading.textContent = 'Past chats'
-    heading.style.cssText =
-      'font-size:var(--sbh-font-size-sm);color:var(--sbh-color-text-muted);padding:var(--sbh-space-xs) 0'
-    host.appendChild(heading)
-
-    if (ctx.host.sessions.length === 0) {
-      const empty = document.createElement('div')
-      empty.textContent = 'none yet'
-      empty.style.cssText = 'font-size:var(--sbh-font-size-sm);color:var(--sbh-color-text-muted)'
-      host.appendChild(empty)
-      return
-    }
-
-    for (const session of ctx.host.sessions) {
-      const button = document.createElement('button')
-      button.dataset.session = session.id
-      button.textContent = session.title || '(untitled)'
-      button.title = `${session.cwd}\n${session.updatedAt}`
-      button.style.cssText = [
-        'display:block',
-        'width:100%',
-        'text-align:left',
-        'cursor:pointer',
-        'border:1px solid var(--sbh-color-border)',
-        'background:var(--sbh-color-surface)',
-        'color:var(--sbh-color-text)',
-        'border-radius:var(--sbh-radius-md)',
-        'padding:var(--sbh-space-xs) var(--sbh-space-sm)',
-        'font-family:var(--sbh-font-sans)',
-        'font-size:var(--sbh-font-size-sm)',
-        'white-space:nowrap',
-        'overflow:hidden',
-        'text-overflow:ellipsis',
-      ].join(';')
-      button.addEventListener('click', () => ctx.dispatch('session.open', { id: session.id }))
-      host.appendChild(button)
-    }
+    // Rebuild only the list: replacing the whole host would take focus (and the
+    // query) out of the filter box on every streamed chunk.
+    const total = ctx.host.sessions.length
+    const heading = host.querySelector<HTMLElement>('[data-session-heading]')
+    if (heading) heading.textContent = total ? `Past chats \u00b7 ${total}` : 'Past chats'
+    const list = host.querySelector<HTMLElement>('[data-session-list]')
+    if (list) paintSessions(list, ctx, host.__query ?? '')
   },
 })

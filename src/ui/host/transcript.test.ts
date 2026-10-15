@@ -79,3 +79,29 @@ describe('permission card', () => {
     expect(el.querySelectorAll('button')).toHaveLength(2)
   })
 })
+
+describe('sessions sidebar', () => {
+  it('renders a row per session and filters by title without rebuilding on input', () => {
+    const base = withMessages(0)
+    const ctx: RenderContext = {
+      ...base,
+      host: {
+        ...base.host,
+        sessions: [
+          { id: 'a', title: 'Refactor parser', cwd: '/x', startedAt: '', updatedAt: '' },
+          { id: 'b', title: 'Fix the launcher', cwd: '/y', startedAt: '', updatedAt: '' },
+          { id: 'c', title: 'Ship it', cwd: '/z', startedAt: '', updatedAt: '' },
+        ],
+      },
+    }
+    const el = renderTree({ type: 'sessions' }, ctx) as HTMLElement
+    expect(el.querySelectorAll('button[data-session]')).toHaveLength(3)
+
+    const filter = el.querySelector('input[data-session-filter]') as HTMLInputElement
+    filter.value = 'launcher'
+    filter.dispatchEvent(new Event('input'))
+    const rows = el.querySelectorAll('button[data-session]')
+    expect(rows).toHaveLength(1)
+    expect((rows[0] as HTMLElement).dataset.session).toBe('b')
+  })
+})

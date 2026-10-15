@@ -1165,3 +1165,22 @@ i.e. before GTK/WebKit initialise. Verified the real path — `gtk-launch sbh` (
 desktop entry the launcher uses) opens, stays, and spawns the bundled core with no
 env workarounds. Lesson: testing only through a wrapper that sets env is not
 testing the app.
+
+## The sessions sidebar (2026-10-15)
+
+ran flagged two things: the "Past chats" list was hundreds of hairlines, and
+CurveLab was still installed.
+
+CurveLab was benchmark residue in `~/.config/sbh` (never in `DEFAULT_LAYOUT`), so
+it was not a shipping flaw — removed the component and restored the layout.
+
+The sidebar *was* a fresh-install bug. In a flex column the rows are shrinkable
+children, so 127 sessions compressed to 127 hairlines instead of scrolling; it
+showed in WebKit and Chromium hid it. Fixed with `flex-shrink:0` on each row and
+by moving the scroll to an inner list, so the heading and filter stay put. Added a
+filter box (state on the element, list-only repaint so typing survives a stream)
+and a count.
+
+The principle, recorded in `AGENTS.md`: a built-in must be usable on a fresh
+install; the agent authors the *taste*. A readable row and a reachable control are
+the built-in's job, not the agent's.

@@ -190,6 +190,16 @@ export const component = {
   `innerHTML`. Components are trusted code; the text they display is not.
 
 `examples/components/button.js` is a working override to copy.
+
+**A list inside a flex column shrinks its rows to fit.** The built-in `sessions`
+sidebar rendered 50 chats as 50 hairlines until each row got `flex-shrink:0` and
+the scrolling moved to an inner list. If a fresh install looks collapsed, that is
+usually it — a real bug in a built-in, not a thing to delegate to the agent.
+
+The rule of thumb: **a built-in must be usable on a fresh install; the agent
+authors the *taste*.** Filtering, grouping, density and looks are the agent's job
+(drop a `sessions.js` into the components dir to override it); a row you cannot
+read or a control you cannot reach is a default that ships broken.
 `examples/components/graph.js` (“CurveLab”) is the larger reference: a pannable,
 zoomable, animated curve editor with editable x/y boxes in ~500 lines, one file,
 no imports, driven entirely by `ctx` and theme tokens. It is the benchmark for how
