@@ -908,3 +908,39 @@ ever run inside Tauri**. `cargo check` passes, the window has never opened.
   since packaging changes the origin story anyway.
 - **The transcript renders injected skill bodies** as the first message of a session.
   Faithful to the file, ugly to read. Presentation decision, not a bug.
+
+## Origin guard, second backend (2026-10-15)
+
+Reordered the roadmap: the handoff put Tauri-first; the origin guard and the goose
+backend were pulled ahead of it because both are window-free and the guard closes a
+live hole.
+
+**Origin guard** (`core/origin.ts`). The listener answered every request with
+`access-control-allow-origin: *` and accepted any WebSocket, so a page open in the
+user's browser could read the session store, `POST /revert`, and drive the agent —
+a shell behind a loopback port is not isolation from the browser. Now an exact-match
+allowlist (Vite dev + Tauri origins, extended by `SBH_ALLOWED_ORIGINS`) gates every
+route and the WS upgrade; a request with no `Origin` (tests, curl) is still admitted,
+since browsers always send one. The response echoes the caller's origin instead of
+`*`. Re-verified in Chromium: the app's origin connects and streams; a stranger
+origin is refused on reads and on the socket.
+
+**goose backend.** `goose acp` is native ACP on stdio, so the registry grew one
+entry. Verified through the real core (`SBH_BACKEND=goose`), not a probe script:
+`turn.started` → `usage`/`thought`/`chunk` → `turn.finished end_turn`, reply intact.
+n=2 for the neutral interface.
+
+**Permission option selection** (found while adding goose). `respondPermission`
+hardcoded `optionId: 'allow'`. ACP requires the response to name an option the agent
+offered, and every option carries a `kind` (`allow_once`/`allow_always`/
+`reject_once`/`reject_always`); the literal id only works against an agent that
+happens to use it. Selection is now by kind, literal id as fallback, `cancelled`
+(fail-closed) when nothing matches. The fake fixture now offers `opt-yes`/`opt-no`,
+so a literal-id client fails the suite.
+
+**What the second backend did *not* buy.** goose (1.54), even in `approve` mode,
+never emitted `session/request_permission`, so the gate's coverage is unchanged; and
+goose stores sessions in SQLite (`~/.local/share/goose/sessions/sessions.db`), which
+the file reader cannot see, so the sidebar is pi's list under a goose backend. Both
+are recorded in `HANDOFF.md`. The neutral session fix is ACP `session/list`, which
+goose advertises.

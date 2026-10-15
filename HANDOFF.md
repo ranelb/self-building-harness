@@ -14,8 +14,8 @@ declarative tree the agent writes as files. "Self-building harness."
 
 ## State
 
-36 commits · **116 tests / 21 files** · `tsc -b` clean · `git status` clean.
-`core` 978 · `shared` 233 · `src` ~1.6k lines of source.
+39 commits · **134 tests / 22 files** · `tsc -b` clean · `git status` clean.
+`core`+`shared` ~1.6k · `src` ~1.5k lines of source.
 
 ```
 core/      the process: ACP, permissions, WS server, theme/layout/components,
@@ -35,9 +35,9 @@ npm run core      # the core, on ws://127.0.0.1:<SBH_PORT>/ws
 npx tauri dev     # the window — first cargo build ~45s
 ```
 
-Useful env: `SBH_BACKEND` (`pi`, or `fake:happy|permission|usage|unknown-update|
+Useful env: `SBH_BACKEND` (`pi`, `goose`, or `fake:happy|permission|usage|unknown-update|
 crash-mid-turn|split-multibyte`), `SBH_PORT`, `SBH_CONFIG_DIR`,
-`SBH_COMPONENTS_DIR`, `SBH_SESSIONS_DIR`.
+`SBH_COMPONENTS_DIR`, `SBH_SESSIONS_DIR`, `SBH_ALLOWED_ORIGINS`.
 
 **A plain `&` background process dies with the invoking shell.** For a browser
 verification use transient systemd units — the exact recipe is in `AGENTS.md`
@@ -48,7 +48,14 @@ verification use transient systemd units — the exact recipe is in `AGENTS.md`
 **Verified in Chromium against a live core:** streaming turns, the permission card
 gating and resuming a turn, theme restyling from one file, component and layout hot
 reload with no page reload, safe mode naming a broken component, revert removing it,
-machine samples, a context meter, 50 real sessions listed and one replayed.
+machine samples, a context meter, 50 real sessions listed and one replayed. The
+origin guard was re-verified the same way (the app's own origin still connects; a
+stranger origin is refused on both the routes and the WebSocket).
+
+**Verified against a second backend:** `goose acp` (goose 1.54, speaks ACP
+natively) handshakes and completes a real turn through the core — `turn.started`,
+`usage`/`thought`/`chunk`, `turn.finished end_turn`, reply intact. This makes the
+central claim n=2.
 
 **Never verified:** anything inside Tauri. WebKitGTK is not Chromium, and this is the
 largest untested surface in the project. The Rust shell compiles; the window has never
@@ -61,16 +68,25 @@ opened, and no core has ever been spawned by the shell.
   bundling, a port handshake, lifecycle, and killing it on exit. **This is the whole
   distance between "project" and "program".**
 - **Open the window.** See above.
-- **No origin check on the loopback WebSocket** — any web page can connect and drive
-  the agent. Small, real, cheap to close; do it with the Tauri work, since packaging
-  changes the origin story.
+- ~~No origin check~~ — **done.** Exact-match allowlist (Vite dev + Tauri origins,
+  extended by `SBH_ALLOWED_ORIGINS`), enforced on every route and the WebSocket
+  upgrade; a missing `Origin` is still admitted for non-browser clients. Re-verify
+  when Tauri introduces the packaged origin (`tauri://localhost` is already listed).
 
 ### The thesis is unproven
-- **A second backend.** The registry has only `pi`, so *"compatible with most
-  harnesses"* is n=1. `goose` is installed, speaks ACP natively, and the fake-agent
-  pattern already exists. Cheapest possible test of the central premise.
-- **Resume a session.** Viewing works; continuing a past chat does not. Needs the core
-  to open an existing harness session (`session/load`, or the harness's resume flag).
+- ~~A second backend~~ — **done, with two gaps.** `goose` is in the registry and a
+  real turn works end to end. What it did *not* widen:
+  - the **permission gate**: goose (1.54), even in `approve` mode, never sent
+    `session/request_permission`, so that path is still tested only by pi-acp and
+    the fake fixture;
+  - **sessions**: the sidebar reads pi's JSON files, and goose keeps its sessions
+    in `~/.local/share/goose/sessions/sessions.db` (SQLite). Under
+    `SBH_BACKEND=goose` the list is therefore pi's, not goose's. The neutral fix is
+    ACP `session/list` (goose advertises it); reading a second store is the
+    un-neutral one.
+- **Resume a session.** Viewing works; continuing a past chat does not. goose
+  advertises `loadSession: true` (pi-acp did not), so it is the better prototype
+  target for the `session/load` route.
 
 ### Daily-driver quality
 - **The harness/model pickers are decorative** — they dispatch into the void with
@@ -131,9 +147,10 @@ Each of these cost real time. They are in `PLAN.md` in more detail.
 ## Where to start
 
 1. **Tauri spawns the core; open the window.** Needs a human at the machine, and
-   unblocks everything.
-2. **A goose backend.** No window needed, and it turns the central claim into a result.
-3. Resume → real pickers → the origin guard.
+   unblocks everything. The origin guard is already in place for it.
+2. Resume → real pickers (backend switching) → optional-basics capability pass.
+
+(Done since the last handoff: the origin guard, and the goose backend.)
 
 To check capability instead of reading: run the `optional-basics` skill as a benchmark
 and report per recipe — **built** / **partial** / **blocked**, naming the missing host
