@@ -1147,3 +1147,21 @@ Two things found by installing, not by tests:
   the core.
 
 The `.deb` builds but is a dead end on Arch (no dpkg); it stays for Debian-family.
+
+## The window died from the launcher; the fix is in the app (2026-10-15)
+
+ran opened SBH from the launcher twice; it closed immediately and left `sbh-core`
+orphans behind. Every launch I had done passed `WEBKIT_DISABLE_DMABUF_RENDERER=1`
+(and a compositing flag) explicitly — the launcher does not, so the app had never
+actually been tested on the path a user would take.
+
+Reproduced by launching `/usr/bin/sbh` with session env and no WebKit variables:
+`Error 71 (Protocol error) dispatching to Wayland display`, exit 1, core orphaned.
+Isolated the needed variable: `WEBKIT_DISABLE_DMABUF_RENDERER=1` alone fixes it;
+`WEBKIT_DISABLE_COMPOSITING_MODE` was cargo-culted and does nothing.
+
+Fix: `run()` sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` (if unset) before the builder,
+i.e. before GTK/WebKit initialise. Verified the real path — `gtk-launch sbh` (the
+desktop entry the launcher uses) opens, stays, and spawns the bundled core with no
+env workarounds. Lesson: testing only through a wrapper that sets env is not
+testing the app.

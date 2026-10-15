@@ -107,8 +107,6 @@ systemd-run --user --unit=sbh-window --collect \
   --setenv=XDG_RUNTIME_DIR=/run/user/1000 \
   --setenv=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus \
   --setenv=XDG_SESSION_TYPE=wayland --setenv=GDK_BACKEND=wayland \
-  --setenv=WEBKIT_DISABLE_DMABUF_RENDERER=1 \
-  --setenv=WEBKIT_DISABLE_COMPOSITING_MODE=1 \
   --setenv=SBH_BACKEND=fake:happy --setenv=SBH_ROOT=/home/ran/Projects/code/SBH \
   /home/ran/Projects/code/SBH/src-tauri/target/debug/app
 ```
@@ -119,6 +117,14 @@ screenshot: Hyprland's `inactive_opacity = 0.9` plus blur makes an unfocused win
 look transparent, which is not an app bug. The core is a child of the shell — close
 the window (not just `systemctl stop`) to watch the lifecycle, or it is reaped by
 the cgroup and the proof is worthless.
+
+**A WebKitGTK crash with no window is a GPU-stack workaround, not env you forgot.**
+On this NVIDIA + Wayland box WebKitGTK's DMA-BUF renderer dies with `Error 71
+(Protocol error) dispatching to Wayland display` before the window is shown, and
+the app exits, **orphaning the core it already spawned**. The shell now sets
+`WEBKIT_DISABLE_DMABUF_RENDERER=1` itself unless it is already set, so every launch
+path works; you do not need the variable in the command above. If you see orphaned
+`sbh-core` processes, an app died after spawning one.
 
 ### Packaging
 

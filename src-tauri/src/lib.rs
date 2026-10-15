@@ -95,6 +95,15 @@ fn stop_core(child: &mut Child) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+  // WebKitGTK's DMA-BUF renderer trips a Wayland protocol error on this GPU stack
+  // (NVIDIA + Wayland) before the window is ever shown, and the app dies with no
+  // window and an orphaned core. Disable it unless the operator set the variable
+  // themselves. Must happen before GTK/WebKit initialise, i.e. before the builder.
+  if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+    // SAFETY: still single-threaded here; no GTK, WebKit or runtime thread exists.
+    unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") }
+  }
+
   let app = tauri::Builder::default()
     .setup(|app| {
       if cfg!(debug_assertions) {
