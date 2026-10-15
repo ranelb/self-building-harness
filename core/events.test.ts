@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeUpdate } from './events.ts'
+import { normalizePermissionRequest, normalizeUpdate } from './events.ts'
 
 describe('normalizeUpdate', () => {
   it('maps an agent message chunk to a chunk event', () => {
@@ -51,5 +51,38 @@ describe('normalizeUpdate', () => {
     expect(normalizeUpdate({})).toEqual([])
     expect(normalizeUpdate('nonsense')).toEqual([])
     expect(normalizeUpdate({ sessionUpdate: 'agent_message_chunk' })).toEqual([])
+  })
+})
+
+describe('normalizePermissionRequest', () => {
+  it('carries the whole tool call, not just the title', () => {
+    expect(
+      normalizePermissionRequest(
+        {
+          toolCall: {
+            toolCallId: 'tc1',
+            title: 'Run ls',
+            kind: 'execute',
+            name: 'shell',
+            rawInput: { command: 'ls -la' },
+          },
+        },
+        'r1'
+      )
+    ).toEqual({
+      type: 'permission.requested',
+      requestId: 'r1',
+      title: 'Run ls',
+      toolCallId: 'tc1',
+      kind: 'execute',
+      name: 'shell',
+      rawInput: { command: 'ls -la' },
+    })
+  })
+
+  it('falls back to the name, then a placeholder, and rejects nonsense', () => {
+    expect(normalizePermissionRequest({ toolCall: { name: 'fetch' } }, 'r2')).toMatchObject({ title: 'fetch' })
+    expect(normalizePermissionRequest({ toolCall: {} }, 'r3')).toMatchObject({ title: 'permission' })
+    expect(normalizePermissionRequest('nonsense', 'r4')).toBeNull()
   })
 })

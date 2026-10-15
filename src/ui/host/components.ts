@@ -154,6 +154,28 @@ registerComponent({
 
 // --- permission ------------------------------------------------------------------
 
+/** Pretty-print a tool call's raw input for display. A reference, not a rule. */
+const formatRawInput = (raw: unknown): string | null => {
+  if (raw === undefined || raw === null) return null
+  if (typeof raw === 'string') {
+    try {
+      return JSON.stringify(JSON.parse(raw), null, 2)
+    } catch {
+      return raw
+    }
+  }
+  try {
+    return JSON.stringify(raw, null, 2)
+  } catch {
+    return String(raw)
+  }
+}
+
+/**
+ * The default permission card. Agent-authored components override it like any
+ * other; this one is the reference, and it uses the whole tool call (`kind`,
+ * `name`, `rawInput`) rather than just the title.
+ */
 registerComponent({
   name: 'permission',
   create() {
@@ -161,7 +183,7 @@ registerComponent({
     el.setAttribute('data-atom', 'permission')
     el.style.display = 'none'
     el.style.flexDirection = 'column'
-    el.style.gap = 'var(--sbh-space-xs)'
+    el.style.gap = 'var(--sbh-space-sm)'
     return el
   },
   update(el, _node, ctx) {
@@ -176,24 +198,56 @@ registerComponent({
     host.style.display = 'flex'
     host.replaceChildren()
     for (const request of pending) {
+      const card = document.createElement('div')
+      card.style.cssText =
+        'display:flex;flex-direction:column;gap:var(--sbh-space-sm);padding:var(--sbh-space-md);' +
+        'border:1px solid var(--sbh-color-border);border-left:3px solid var(--sbh-color-accent);' +
+        'border-radius:var(--sbh-radius-md);background:var(--sbh-color-surface);box-shadow:var(--sbh-shadow-sm)'
+
+      const header = document.createElement('div')
+      header.style.cssText = 'display:flex;align-items:center;gap:var(--sbh-space-sm);flex-wrap:wrap'
+      if (request.kind) {
+        const badge = document.createElement('span')
+        badge.textContent = request.kind
+        badge.style.cssText =
+          'text-transform:uppercase;letter-spacing:0.06em;font-size:var(--sbh-font-size-sm);' +
+          'font-weight:var(--sbh-font-weight-bold);color:var(--sbh-color-accent-text);' +
+          'background:var(--sbh-color-accent);border-radius:var(--sbh-radius-full);padding:2px 8px'
+        header.appendChild(badge)
+      }
       const label = document.createElement('div')
       label.textContent = `Permission requested: ${request.title}`
-      host.appendChild(label)
+      label.style.fontWeight = 'var(--sbh-font-weight-bold)'
+      header.appendChild(label)
+      card.appendChild(header)
 
-      const row = document.createElement('div')
-      row.style.display = 'flex'
-      row.style.gap = 'var(--sbh-space-sm)'
-      for (const [text, decision] of [
-        ['Allow', 'permission.allow'],
-        ['Deny', 'permission.deny'],
+      const input = formatRawInput(request.rawInput)
+      if (input) {
+        const pre = document.createElement('pre')
+        pre.textContent = input
+        pre.style.cssText =
+          'margin:0;padding:var(--sbh-space-sm);background:var(--sbh-color-surface-alt);' +
+          'border:1px solid var(--sbh-color-border);border-radius:var(--sbh-radius-sm);' +
+          'font-family:var(--sbh-font-mono);font-size:var(--sbh-font-size-sm);' +
+          'overflow-x:auto;white-space:pre-wrap;word-break:break-word;max-height:220px'
+        card.appendChild(pre)
+      }
+
+      const actions = document.createElement('div')
+      actions.style.cssText = 'display:flex;gap:var(--sbh-space-sm)'
+      for (const [text, decision, accent] of [
+        ['Allow', 'permission.allow', true],
+        ['Deny', 'permission.deny', false],
       ] as const) {
         const button = document.createElement('button')
         button.textContent = text
         controlStyle(button)
+        if (accent) button.style.background = 'var(--sbh-color-accent)'
         button.addEventListener('click', () => ctx.dispatch(decision, { requestId: request.requestId }))
-        row.appendChild(button)
+        actions.appendChild(button)
       }
-      host.appendChild(row)
+      card.appendChild(actions)
+      host.appendChild(card)
     }
   },
 })

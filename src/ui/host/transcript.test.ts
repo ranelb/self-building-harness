@@ -52,3 +52,30 @@ describe('transcript windowing', () => {
     expect(el.textContent).not.toContain('Load earlier')
   })
 })
+
+describe('permission card', () => {
+  it('shows the tool kind and the raw input, not just a title', () => {
+    const base = withMessages(0)
+    const ctx: RenderContext = {
+      ...base,
+      host: {
+        ...base.host,
+        pendingPermission: [
+          {
+            type: 'permission.requested',
+            requestId: 'r1',
+            title: 'Run ls',
+            kind: 'execute',
+            name: 'shell',
+            rawInput: { command: 'ls -la' },
+          },
+        ],
+      },
+    }
+    const el = renderTree({ type: 'permission' }, ctx) as HTMLElement
+    expect(el.textContent).toContain('execute')
+    expect(el.textContent).toContain('Run ls')
+    expect(el.textContent).toContain('ls -la')
+    expect(el.querySelectorAll('button')).toHaveLength(2)
+  })
+})

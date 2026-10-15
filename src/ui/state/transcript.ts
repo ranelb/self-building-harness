@@ -5,7 +5,7 @@
  * awkward cases (chunks arriving after an error, a second turn, an answered
  * permission) are pinned by ordinary unit tests.
  */
-import type { UiEvent } from '../../../shared/protocol.ts'
+import type { PermissionRequest, UiEvent } from '../../../shared/protocol.ts'
 
 export interface TranscriptMessage {
   id: string
@@ -13,10 +13,7 @@ export interface TranscriptMessage {
   text: string
 }
 
-export interface PendingPermission {
-  requestId: string
-  title: string
-}
+export type PendingPermission = PermissionRequest
 
 export interface Transcript {
   messages: TranscriptMessage[]
@@ -98,10 +95,7 @@ export function applyEvent(state: Transcript, event: UiEvent): Transcript {
     case 'permission.requested':
       return {
         ...state,
-        pendingPermission: [
-          ...state.pendingPermission,
-          { requestId: event.requestId, title: event.title },
-        ],
+        pendingPermission: [...state.pendingPermission, event],
       }
 
     default:

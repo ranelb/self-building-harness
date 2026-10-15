@@ -3,6 +3,8 @@
  * and consumed by the UI.
  */
 
+import type { PermissionRequest } from './protocol.ts'
+
 export interface UiNode {
   type: string
   props?: Record<string, unknown>
@@ -36,10 +38,7 @@ export interface HostMessage {
   text: string
 }
 
-export interface PendingPermission {
-  requestId: string
-  title: string
-}
+export type PendingPermission = PermissionRequest
 
 export interface PickOption {
   value: string

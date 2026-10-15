@@ -83,7 +83,13 @@ async function runScenario(
       chunk('before ')
       const reply = await sendRequest('session/request_permission', {
         sessionId: SESSION_ID,
-        toolCall: { toolCallId: 'tc1', title: 'Run ls', kind: 'execute' },
+        toolCall: {
+          toolCallId: 'tc1',
+          title: 'Run ls',
+          kind: 'execute',
+          name: 'shell',
+          rawInput: { command: 'ls -la' },
+        },
         options: [
           // Deliberately not named 'allow'/'deny': a client that answers with a
           // literal id instead of selecting by `kind` must fail this scenario.

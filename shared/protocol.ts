@@ -24,12 +24,24 @@ export type UiEvent =
   | { type: 'user.chunk'; text: string }
   | { type: 'thought'; text: string }
   | { type: 'tool'; toolCallId: string; title: string; status?: string }
-  | { type: 'permission.requested'; requestId: string; title: string }
+  | {
+      type: 'permission.requested'
+      requestId: string
+      title: string
+      /** ACP ToolCall fields, so an agent-authored card can show the real thing. */
+      toolCallId?: string
+      kind?: string
+      name?: string
+      rawInput?: unknown
+    }
   | { type: 'usage'; used: number; size: number; cost?: unknown }
   | { type: 'config'; options: SessionConfigOption[] }
   | { type: 'turn.started' }
   | { type: 'turn.finished'; stopReason: string }
   | { type: 'error'; message: string }
+
+/** A pending permission request as the host state carries it. */
+export type PermissionRequest = Extract<UiEvent, { type: 'permission.requested' }>
 
 /** Client -> core. */
 export type ClientToCore =

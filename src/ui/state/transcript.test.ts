@@ -25,13 +25,23 @@ describe('applyEvent', () => {
     expect(state.messages[0]?.text).toBe('a')
   })
 
-  it('queues a permission request', () => {
+  it('queues a permission request with the whole tool call', () => {
     const state = applyEvent(empty(), {
       type: 'permission.requested',
       requestId: 'r1',
       title: 'Run ls',
+      kind: 'execute',
+      name: 'shell',
+      rawInput: { command: 'ls -la' },
     })
-    expect(state.pendingPermission).toEqual([{ requestId: 'r1', title: 'Run ls' }])
+    expect(state.pendingPermission).toHaveLength(1)
+    expect(state.pendingPermission[0]).toMatchObject({
+      requestId: 'r1',
+      title: 'Run ls',
+      kind: 'execute',
+      name: 'shell',
+      rawInput: { command: 'ls -la' },
+    })
   })
 
   it('is streaming between turn.started and turn.finished', () => {
@@ -55,7 +65,9 @@ describe('resolvePermission', () => {
     let state = applyEvent(empty(), { type: 'permission.requested', requestId: 'r1', title: 'one' })
     state = applyEvent(state, { type: 'permission.requested', requestId: 'r2', title: 'two' })
     state = resolvePermission(state, 'r1')
-    expect(state.pendingPermission).toEqual([{ requestId: 'r2', title: 'two' }])
+    expect(state.pendingPermission).toEqual([
+      expect.objectContaining({ requestId: 'r2', title: 'two' }),
+    ])
   })
 })
 

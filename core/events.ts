@@ -77,13 +77,23 @@ export function normalizeUpdate(update: unknown): UiEvent[] {
  */
 export function normalizePermissionRequest(params: unknown, requestId: string): UiEvent | null {
   if (!isRecord(params)) return null
-  const toolCall = params.toolCall
-  const title = isRecord(toolCall)
-    ? typeof toolCall.title === 'string'
+  const toolCall = isRecord(params.toolCall) ? params.toolCall : {}
+  const title =
+    typeof toolCall.title === 'string'
       ? toolCall.title
       : typeof toolCall.name === 'string'
         ? toolCall.name
         : 'permission'
-    : 'permission'
-  return { type: 'permission.requested', requestId, title }
+  // The whole tool call goes to the UI: `kind`, `name` and `rawInput` are what an
+  // agent-authored card needs to show a command, a path or a diff. Whether it
+  // shows them is the agent's decision, not the core's.
+  return {
+    type: 'permission.requested',
+    requestId,
+    title,
+    ...(typeof toolCall.toolCallId === 'string' ? { toolCallId: toolCall.toolCallId } : {}),
+    ...(typeof toolCall.kind === 'string' ? { kind: toolCall.kind } : {}),
+    ...(typeof toolCall.name === 'string' ? { name: toolCall.name } : {}),
+    ...(toolCall.rawInput !== undefined ? { rawInput: toolCall.rawInput } : {}),
+  }
 }
