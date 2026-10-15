@@ -1052,3 +1052,26 @@ default, root-owned when on; presentation is fully agent-authored.
 2. **Enforcement — next.** Manifest loader (root path, dev fallback), classification,
    policy, audit log, the default-off switch.
 3. **Switch UX — after.** A Hub/Ryoku page that toggles and edits grants via pkexec.
+
+## Benchmark: one gorgeous component (2026-10-15)
+
+`examples/components/graph.js` — CurveLab, ~500 lines, one file, no imports. The
+question was how far a single agent-authored component can go, so the bar was
+deliberately high: an animated, pannable, zoomable curve editor with editable x/y
+boxes, not another button.
+
+It uses only the component contract — `ctx.tokens` for colours (read as canvas
+colours, so it follows the theme), `ctx.bind`/`latest`, full DOM, and a `destroy`
+that cancels its `requestAnimationFrame` and its `ResizeObserver`. Canvas 2D:
+Catmull-Rom curve, gradient area, glowing breathing handles, grid + ticks,
+crosshair readout; pointer pan, wheel zoom; DOM number boxes feeding an animated
+transition.
+
+Results:
+- Works in Chromium **and** the real Tauri/WebKitGTK window (second engine, no
+  code change).
+- **No leaked loop.** With an instrumented `requestAnimationFrame`, the frame rate
+  was 59/s before a hot reload and 61/s after, one instance — versus the earlier
+  probe's doubled 118/s. The `destroy` hook holds.
+- The whole thing is a `destroy` + `ResizeObserver` + pointer events in one file;
+  nothing in the core, the renderer or the builder changed to support it.

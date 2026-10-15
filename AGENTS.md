@@ -171,6 +171,12 @@ export const component = {
   `innerHTML`. Components are trusted code; the text they display is not.
 
 `examples/components/button.js` is a working override to copy.
+`examples/components/graph.js` (“CurveLab”) is the larger reference: a pannable,
+zoomable, animated curve editor with editable x/y boxes in ~500 lines, one file,
+no imports, driven entirely by `ctx` and theme tokens. It is the benchmark for how
+far a single agent-authored component can go. To run it, copy it into
+`~/.config/sbh/components/` and add `{ "type": "graph", "props": { "height": "300px" } }`
+to `~/.config/sbh/layout.json`; both are hot-reloaded and git-backed.
 
 ## Hot reload
 
