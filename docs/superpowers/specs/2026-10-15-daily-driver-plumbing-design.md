@@ -51,9 +51,10 @@ backends:**
 - The Edit action on a user message:
   1. If the backend advertises `fork` **and** the message is the last user turn,
      fork the session and send the edited text as the branch's first prompt.
-  2. Otherwise (today's pi): prefill the composer with the text, mark the original
-     turn **"superseded"** in the UI, and resend as a new turn. The agent's context
-     still contains the original turn; the marker says so rather than pretending.
+  2. Otherwise (today's pi): prefill the composer with the text, **dim** the
+     original turn and mark it **"superseded"**, and resend as a new turn. The
+     agent's context still contains the original turn; the marker says so rather
+     than pretending.
 - The transcript never silently rewrites history the agent can see.
 
 This gives a real edit affordance now, and it becomes true branching the day a
@@ -130,8 +131,8 @@ byte-count note). This is stated in the UI: a PDF chip, and the agent decides.
     attachment tray with thumbnails/chips and remove; the Send button becomes
     **Stop** while `status === 'streaming'` (Esc also cancels).
   - `sessions` — a **New Chat** button above the filter.
-  - `changedFiles` — new host component; each file a bordered box, deduped, with a
-    count; reflects the transcript's edited files.
+  - `changedFiles` — new host component; files grouped **per turn**, each file a
+    bordered box, with a count; reflects the transcript's edited files.
 - `shared/layout.ts`: add `{ type: 'changedFiles' }` after the transcript in the
   default layout (and in the phone layout where appropriate).
 
@@ -177,9 +178,18 @@ look and the new plumbing, while the repo ships the functional built-ins.
 - **Fork path is dead code on pi** until a backend advertises it; it is still tested
   against the fake agent.
 
-## Open questions for the reviewer
+## Resolved decisions (2026-10-15)
 
-1. Edit fallback wording: is a "superseded" marker on the old turn acceptable, or
-   should the old turn be hidden entirely (the agent still sees it)?
-2. `changedFiles`: per-turn grouping, or one deduped list for the whole transcript?
-3. PDFs: accept the hand-off-to-harness limit, or add core-side PDF text extraction?
+1. **Edit fallback** — the superseded turn is shown **dimmed** with a "superseded"
+   marker, not hidden. The agent still sees it; the UI says so.
+2. **changedFiles** — grouped **per turn**, not one deduped list.
+3. **PDFs** — **no** core-side text extraction. A PDF is persisted and handed to the
+   harness as a `resource_link`; whether it can be read is the harness's business.
+
+## Known follow-up (outside this spec)
+
+A live user message only reaches `host.messages` (a live turn emits no
+`user.chunk`). Any component that renders the transcript from the raw event stream
+alone must also render new user messages from `host.messages`; `sbhTranscript` hit
+this as a bug and was fixed by tracking host user-message ids. The timeline refactor
+in this spec removes the trap by making host state the single source.
