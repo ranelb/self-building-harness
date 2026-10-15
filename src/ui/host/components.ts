@@ -437,6 +437,14 @@ const ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024
 
 type ComposerHost = HTMLElement & { __error?: string }
 
+/** Paint the composer's inline error immediately; a host update is not coming. */
+const paintComposerError = (el: ComposerHost): void => {
+  const node = el.querySelector('[data-composer-error]') as HTMLElement | null
+  if (!node) return
+  node.style.display = el.__error ? 'block' : 'none'
+  node.textContent = el.__error ?? ''
+}
+
 /** Read dropped/picked/pasted files into base64 attachments, with a size guard. */
 const addFiles = (el: ComposerHost, files: File[]): void => {
   el.__error = undefined
@@ -446,6 +454,10 @@ const addFiles = (el: ComposerHost, files: File[]): void => {
       continue
     }
     const reader = new FileReader()
+    reader.onerror = () => {
+      el.__error = `${file.name} could not be read`
+      paintComposerError(el)
+    }
     reader.onload = () => {
       const result = String(reader.result ?? '')
       const comma = result.indexOf(',')
@@ -461,6 +473,7 @@ const addFiles = (el: ComposerHost, files: File[]): void => {
     }
     reader.readAsDataURL(file)
   }
+  paintComposerError(el)
 }
 
 const paintAttachments = (tray: HTMLElement, attachments: Attachment[], el: ComposerHost): void => {

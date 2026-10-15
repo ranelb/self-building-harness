@@ -4,6 +4,7 @@
  * later phone/PWA client is just another client rather than a second backend.
  */
 import { createServer } from 'node:http'
+import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -126,7 +127,18 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     process.env.SBH_STATE_DIR ?? join(homedir(), '.local', 'state', 'sbh'),
     'attachments'
   )
-  let attachmentSequence = 0
+  /**
+   * A session switch (new / resume / fork) is asynchronous. Prompts queue behind it
+   * so a prompt sent right after a switch cannot race the connection it replaced.
+   */
+  let sessionSwitch: Promise<void> = Promise.resolve()
+  /** Last capabilities the agent reported; replayed to clients that connect later. */
+  let capabilitiesState: {
+    image: boolean
+    audio: boolean
+    embeddedContext: boolean
+    fork: boolean
+  } | null = null
   await ensureComponentsDir(componentsDir)
   await ensureThemeFile(configDir)
   await ensureLayoutFile(configDir)
@@ -270,17 +282,14 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
       }
       if (event.type === 'capabilities') {
         // Not a transcript event: publish it on the state channel so the composer
-        // can gate the attacher honestly.
-        sendToAll({
-          type: 'state',
-          key: 'capabilities',
-          value: {
-            image: event.image,
-            audio: event.audio,
-            embeddedContext: event.embeddedContext,
-            fork: event.fork,
-          },
-        })
+        // can gate the attacher honestly, and cache it for later clients.
+        capabilitiesState = {
+          image: event.image,
+          audio: event.audio,
+          embeddedContext: event.embeddedContext,
+          fork: event.fork,
+        }
+        sendToAll({ type: 'state', key: 'capabilities', value: capabilitiesState })
         return
       }
       broadcast(event)
@@ -308,22 +317,26 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
    * agent's replayed `session/update`s rebuild the transcript for every client.
    */
   const resumeSession = (id: string, sessionCwd: string) => {
-    conn?.close()
-    conn = null
-    resumeTarget = { sessionId: id, cwd: sessionCwd || cwd }
-    void ensureConnection().open()
+    sessionSwitch = (async () => {
+      conn?.close()
+      conn = null
+      resumeTarget = { sessionId: id, cwd: sessionCwd || cwd }
+      await ensureConnection().open()
+    })()
   }
 
   const startNewSession = () => {
-    // Settle the in-flight turn before tearing the connection down, so a cancelled
-    // turn is never attributed to the session the client has stopped showing.
-    void conn?.cancel().catch(() => {})
-    conn?.close()
-    conn = null
-    resumeTarget = null
-    configOptions = []
-    void ensureConnection().open()
-    broadcast({ type: 'session.reset', reason: 'new' })
+    sessionSwitch = (async () => {
+      // Ask the agent to stop, then drop the connection. The old turn is
+      // abandoned, not settled — `close()` does not wait for the cancel to flush.
+      await conn?.cancel().catch(() => {})
+      conn?.close()
+      conn = null
+      resumeTarget = null
+      configOptions = []
+      await ensureConnection().open()
+      broadcast({ type: 'session.reset', reason: 'new' })
+    })()
   }
 
   const toUiSession = (session: SessionSummary) => ({
@@ -511,6 +524,9 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     // A fresh client needs the current pickers before it asks anything.
     socket.send(JSON.stringify({ type: 'state', key: 'harness', value: harnessState() }))
     socket.send(JSON.stringify({ type: 'state', key: 'model', value: modelState() }))
+    if (capabilitiesState) {
+      socket.send(JSON.stringify({ type: 'state', key: 'capabilities', value: capabilitiesState }))
+    }
     // The model list only arrives with a session (`session/new` carries
     // `configOptions`), so open one now. pi does not write a session file until
     // the first message; goose does create an empty row.
@@ -532,18 +548,18 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
       if (msg.type === 'prompt' && typeof msg.text === 'string') {
         const attachments = Array.isArray(msg.attachments) ? msg.attachments : []
         if (!msg.text.trim() && attachments.length === 0) return
-        const connection = ensureConnection()
         void (async () => {
           try {
-            // Images only go to a backend that can see them; everything else is
-            // persisted and handed over as a file. The connection persists while
-            // the prompt runs, so reading capabilities here is safe.
-            const blocks = await attachmentBlocks(
-              join(attachmentsBase, `p${(attachmentSequence += 1)}`),
-              attachments,
-              { image: connection.capabilities().image }
-            )
-            await connection.prompt(msg.text, blocks)
+            await sessionSwitch
+            // A switch may have replaced the connection while we queued.
+            const live = ensureConnection()
+            // Capabilities arrive with `initialize`; wait for it so an image is not
+            // downgraded to a file link just because the handshake had not resolved.
+            await live.ready()
+            const blocks = await attachmentBlocks(join(attachmentsBase, randomUUID()), attachments, {
+              image: live.capabilities().image,
+            })
+            await live.prompt(msg.text, blocks)
           } catch (error) {
             broadcast({ type: 'error', message: (error as Error).message })
           }
@@ -562,14 +578,14 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
       }
 
       if (msg.type === 'session.fork') {
-        void (async () => {
+        sessionSwitch = (async () => {
           try {
             const id = await ensureConnection().fork()
             conn?.close()
             conn = null
             resumeTarget = { sessionId: id, cwd }
             configOptions = []
-            void ensureConnection().open()
+            await ensureConnection().open()
             broadcast({ type: 'session.reset', reason: 'fork' })
           } catch (error) {
             broadcast({ type: 'error', message: (error as Error).message })

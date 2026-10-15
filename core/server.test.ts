@@ -83,16 +83,37 @@ describe('core server', () => {
         })
       )
       await waitFor(() => messages.some((m) => m.event?.type === 'turn.finished'))
-      const dir = join(stateDir, 'attachments', 'p1')
-      await waitFor(() => true)
-      const files = await readdir(dir).catch(() => [] as string[])
-      expect(files.some((name) => name.endsWith('p.png'))).toBe(true)
+      const root = join(stateDir, 'attachments')
+      const dirs = await readdir(root).catch(() => [] as string[])
+      const names: string[] = []
+      for (const dir of dirs) {
+        names.push(...(await readdir(join(root, dir)).catch(() => [] as string[])))
+      }
+      expect(names.some((name) => name.endsWith('p.png'))).toBe(true)
       ws.close()
     } finally {
       if (previous === undefined) delete process.env.SBH_STATE_DIR
       else process.env.SBH_STATE_DIR = previous
       await rm(stateDir, { recursive: true, force: true })
     }
+  })
+
+  it('replays cached capabilities to a later client', async () => {
+    core = await startCore({ port: 0, backend: 'fake:happy' })
+    const first = new WebSocket(`ws://127.0.0.1:${core.port}/ws`)
+    const firstMessages: any[] = []
+    first.on('message', (data) => firstMessages.push(JSON.parse(String(data))))
+    await once(first, 'open')
+    await waitFor(() => firstMessages.some((m) => m.type === 'state' && m.key === 'capabilities'))
+
+    const second = new WebSocket(`ws://127.0.0.1:${core.port}/ws`)
+    const secondMessages: any[] = []
+    second.on('message', (data) => secondMessages.push(JSON.parse(String(data))))
+    await once(second, 'open')
+    await waitFor(() => secondMessages.some((m) => m.type === 'state' && m.key === 'capabilities'))
+    expect(secondMessages.find((m) => m.key === 'capabilities')?.value).toMatchObject({ image: true, fork: true })
+    first.close()
+    second.close()
   })
 
   it('serves the component directory', async () => {

@@ -103,4 +103,37 @@ describe('App', () => {
       ;(globalThis as { WebSocket: unknown }).WebSocket = original
     }
   })
+
+  it('forks before resending an edit once the backend advertises fork', async () => {
+    const original = globalThis.WebSocket
+    ;(globalThis as { WebSocket: unknown }).WebSocket = FakeSocket
+    FakeSocket.last = undefined
+    try {
+      const host = document.createElement('div')
+      document.body.appendChild(host)
+      render(<App coreUrl="ws://127.0.0.1:9/ws" />, host)
+      await tick()
+      const socket = await waitForSocket()
+      socket?.onmessage?.({ data: JSON.stringify({ type: 'event', event: { type: 'user.chunk', text: 'hello' } }) })
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'state',
+          key: 'capabilities',
+          value: { image: true, audio: false, embeddedContext: false, fork: true },
+        }),
+      })
+      await tick()
+      ;(host.querySelector('button[data-edit]') as HTMLButtonElement).click()
+      await tick()
+      ;(host.querySelector('button[data-send]') as HTMLButtonElement).click()
+      const types = (socket?.sent ?? []).map((m) => (m as { type: string }).type)
+      expect(types).toContain('session.fork')
+      expect(types).toContain('prompt')
+      expect(types.indexOf('session.fork')).toBeLessThan(types.lastIndexOf('prompt'))
+      render(null, host)
+      host.remove()
+    } finally {
+      ;(globalThis as { WebSocket: unknown }).WebSocket = original
+    }
+  })
 })

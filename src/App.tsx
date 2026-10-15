@@ -137,7 +137,24 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
       if (event.type === 'session.reset') setAttachments([])
       setTranscript((previous) => applyEvent(previous, event))
     })
-    connection.onState((key, value) => setData((previous) => ({ ...previous, [key]: value })))
+    connection.onState((key, value) => {
+      if (key === 'capabilities' && typeof value === 'object' && value !== null) {
+        // The core publishes capabilities on the state channel; the transcript
+        // owns them (fork gating and the composer's attacher read from there).
+        const caps = value as Partial<Record<'image' | 'audio' | 'embeddedContext' | 'fork', unknown>>
+        setTranscript((previous) =>
+          applyEvent(previous, {
+            type: 'capabilities',
+            image: caps.image === true,
+            audio: caps.audio === true,
+            embeddedContext: caps.embeddedContext === true,
+            fork: caps.fork === true,
+          })
+        )
+        return
+      }
+      setData((previous) => ({ ...previous, [key]: value }))
+    })
     connection.onInvalidate((what) => {
       if (what === 'components') refreshComponents()
       else if (what === 'theme') refreshTheme()

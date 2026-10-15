@@ -43,6 +43,8 @@ export interface AcpConnection {
   capabilities(): AgentCapabilities
   /** Fork the current session; resolves to the new session id. */
   fork(): Promise<string>
+  /** Resolves once `initialize` has settled (capabilities are known). */
+  ready(): Promise<void>
   close(): void
 }
 
@@ -353,6 +355,10 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
 
     capabilities() {
       return capabilitiesValue
+    },
+
+    async ready() {
+      await ready
     },
 
     async fork() {
