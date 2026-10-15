@@ -41,7 +41,14 @@ registerComponent({
   update(el, _node, ctx) {
     const host = el as HTMLElement
     const notices = ctx.host.notices
-    if (notices.length === 0) {
+    // Manifest decisions are visibility: show the recent denials so a blocked
+    // action is not silent. Allows are left to the audit log (they are the norm).
+    const denials = Array.isArray(ctx.host.data.policy)
+      ? (ctx.host.data.policy as { capability?: unknown; decision?: unknown; subject?: unknown }[]).filter(
+          (entry) => entry.decision === 'deny'
+        )
+      : []
+    if (notices.length === 0 && denials.length === 0) {
       host.style.display = 'none'
       host.replaceChildren()
       return
@@ -56,6 +63,17 @@ registerComponent({
       line.style.fontSize = 'var(--sbh-font-size-sm)'
       host.appendChild(line)
     }
+
+    for (const entry of denials.slice(0, 3)) {
+      const line = document.createElement('div')
+      const subject = entry.subject === undefined ? '' : ` · ${String(entry.subject)}`
+      line.textContent = `policy denied · ${String(entry.capability ?? 'other')}${subject}`
+      line.style.color = 'var(--sbh-color-danger)'
+      line.style.fontSize = 'var(--sbh-font-size-sm)'
+      host.appendChild(line)
+    }
+
+    if (notices.length === 0) return
 
     const revert = document.createElement('button')
     revert.textContent = 'Revert last change'

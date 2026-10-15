@@ -17,8 +17,15 @@ import { sampleSystem } from './system.ts'
 import { ensureRepo, history, revertLast, snapshot } from './versioning.ts'
 import { watchPaths } from './watch.ts'
 import { DENY_BY_DEFAULT, respondToPermission, type PermissionPolicy } from './acp/permissions.ts'
+import {
+  appendAudit,
+  classifyToolCall,
+  evaluate,
+  loadManifest,
+  ROOT_MANIFEST,
+} from './capabilities.ts'
 import { isOriginAllowed, resolveAllowedOrigins } from './origin.ts'
-import type { SessionConfigOption, UiEvent } from '../shared/protocol.ts'
+import type { PermissionRequest, SessionConfigOption, UiEvent } from '../shared/protocol.ts'
 
 /**
  * The scripted fixture (test seam).
@@ -51,6 +58,12 @@ export interface CoreOptions {
   sessionsRoot?: string
   /** Browser origins allowed to reach this core. Overrides the default set. */
   allowedOrigins?: readonly string[]
+  /** Root-owned capability manifest. Defaults to `/etc/sbh/capabilities.toml`. */
+  manifestRoot?: string
+  /** User manifest, consulted only when the root one is absent (development). */
+  manifestUser?: string
+  /** Where the permission audit log is appended. */
+  auditPath?: string
 }
 
 export interface Core {
@@ -72,6 +85,11 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
   const sessionsRoot =
     options.sessionsRoot ?? process.env.SBH_SESSIONS_DIR ?? join(homedir(), '.pi', 'agent', 'sessions')
   const allowedOrigins = resolveAllowedOrigins(options.allowedOrigins)
+  const manifestRoot = options.manifestRoot ?? ROOT_MANIFEST
+  const manifestUser = options.manifestUser ?? join(configDir, 'capabilities.toml')
+  const auditPath =
+    options.auditPath ??
+    join(process.env.SBH_STATE_DIR ?? join(homedir(), '.local', 'state', 'sbh'), 'audit.log')
   await ensureComponentsDir(componentsDir)
   await ensureThemeFile(configDir)
   await ensureLayoutFile(configDir)
@@ -83,6 +101,10 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
   let resumeTarget: { sessionId: string; cwd: string } | null = null
   /** The latest session config options, so a new client can be told the model. */
   let configOptions: SessionConfigOption[] = []
+  /** Unresolved UI-owned decisions, so their answers can be audited with context. */
+  const awaitingUi = new Map<string, { title: string; capability: string }>()
+  /** The manifest's audit flag, refreshed on every load; true when disabled. */
+  let auditEnabled = true
 
   const broadcast = (event: UiEvent) => sendToAll({ type: 'event', event })
 
@@ -110,6 +132,73 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     return model ? { value: model.currentValue, options: model.options } : { value: '', options: [] }
   }
 
+  const audit = (entry: Parameters<typeof appendAudit>[1]) => {
+    if (auditEnabled) void appendAudit(auditPath, entry)
+  }
+
+  /**
+   * Judge a permission request. With the manifest on, the core answers and the UI
+   * is only told the outcome; with it off, the UI decides (or the policy does when
+   * nobody is connected). Never leaves the agent hanging.
+   */
+  const handlePermission = async (
+    connection: AcpConnection,
+    event: PermissionRequest
+  ): Promise<void> => {
+    const { manifest } = await loadManifest({ rootPath: manifestRoot, userPath: manifestUser })
+    auditEnabled = manifest.enabled ? manifest.audit : true
+
+    if (manifest.enabled) {
+      const classification = classifyToolCall(event)
+      const verdict = evaluate(manifest, classification)
+      await respondToPermission(connection, event.requestId, verdict.decision)
+      awaitingUi.delete(event.requestId)
+      audit({
+        at: new Date().toISOString(),
+        source: 'manifest',
+        capability: classification.capability,
+        ...(classification.subject ? { subject: classification.subject } : {}),
+        decision: verdict.decision,
+        reason: verdict.reason,
+        title: event.title,
+      })
+      broadcast({
+        type: 'permission.resolved',
+        requestId: event.requestId,
+        title: event.title,
+        capability: classification.capability,
+        ...(classification.subject ? { subject: classification.subject } : {}),
+        decision: verdict.decision,
+        reason: verdict.reason,
+      })
+      return
+    }
+
+    if (clients.size === 0) {
+      // Nobody to ask. The gate is still answered — by the policy, not by silence.
+      const decided = policy({ requestId: event.requestId, title: event.title })
+      const decision = decided === 'allow' ? 'allow' : 'deny'
+      await respondToPermission(connection, event.requestId, decision)
+      const classification = classifyToolCall(event)
+      audit({
+        at: new Date().toISOString(),
+        source: 'unattended',
+        capability: classification.capability,
+        ...(classification.subject ? { subject: classification.subject } : {}),
+        decision,
+        reason: 'no client connected',
+        title: event.title,
+      })
+      return
+    }
+
+    awaitingUi.set(event.requestId, {
+      title: event.title,
+      capability: classifyToolCall(event).capability,
+    })
+    broadcast(event)
+  }
+
   const ensureConnection = (): AcpConnection => {
     if (conn) return conn
     const created = connectAcp({
@@ -118,10 +207,9 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     })
     resumeTarget = null
     created.onEvent((event) => {
-      if (event.type === 'permission.requested' && clients.size === 0) {
-        // The gate is still answered — by the policy, not by silence.
-        const decided = policy({ requestId: event.requestId, title: event.title })
-        void respondToPermission(created, event.requestId, decided === 'allow' ? 'allow' : 'deny')
+      if (event.type === 'permission.requested') {
+        void handlePermission(created, event)
+        return
       }
       if (event.type === 'config') {
         configOptions = event.options
@@ -367,6 +455,16 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
       if (msg.type === 'permission' && typeof msg.requestId === 'string') {
         const decision = msg.decision === 'allow' ? 'allow' : 'deny'
         void respondToPermission(ensureConnection(), msg.requestId, decision)
+        const meta = awaitingUi.get(msg.requestId)
+        awaitingUi.delete(msg.requestId)
+        audit({
+          at: new Date().toISOString(),
+          source: 'ui',
+          capability: meta?.capability ?? 'other',
+          decision,
+          reason: 'answered in the UI',
+          title: meta?.title ?? '',
+        })
         return
       }
 

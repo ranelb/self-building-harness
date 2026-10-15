@@ -1,0 +1,55 @@
+# SBH capability manifest.
+#
+# Default: absent = OFF. The core trusts the UI, and the UI answers permission
+# requests. This file only matters when `enabled = true`.
+#
+# Installed root-owned at /etc/sbh/capabilities.toml so the agent (which runs as
+# you, with your shell) cannot edit it. A user copy at
+# ~/.config/sbh/capabilities.toml is consulted only when this file is absent —
+# for development, and not as a boundary.
+#
+# Rules are keyed by the request's ACP tool kind:
+#   read, search        -> fs.read
+#   edit, move, delete  -> fs.write
+#   execute             -> shell
+#   fetch               -> net
+#   switch_mode         -> session.mode
+#   anything unknown    -> other (default-deny)
+#
+# `decision` is one of:
+#   "allow"  run it (optionally restricted by paths / commands / hosts)
+#   "deny"   refuse it
+#   "ask"    refuse it and surface it — there is no click-to-allow, because a
+#            click is code the agent wrote; grants are edits to this file.
+#
+# A capability with no rule is denied. Everything fails closed.
+
+[policy]
+# The whole boundary. Off unless you say otherwise.
+enabled = false
+# Append every decision (one JSON object per line) to
+# ~/.local/state/sbh/audit.log.
+audit = true
+
+# Read anywhere under your projects and the vault.
+[capabilities.fs.read]
+decision = "allow"
+paths = ["~/Projects/**", "~/.local/share/ryoku/rashin/**"]
+
+# Writes are refused and shown. Add paths to grant them.
+[capabilities.fs.write]
+decision = "ask"
+
+# A small shell allowlist. Note the space: `git *` does not match `github`.
+[capabilities.shell]
+decision = "allow"
+commands = ["git *", "npm run *", "cargo *", "bun *"]
+
+# No network by default.
+[capabilities.net]
+decision = "deny"
+hosts = []
+
+# Mode switching is harmless.
+[capabilities.session.mode]
+decision = "allow"

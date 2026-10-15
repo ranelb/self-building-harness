@@ -1075,3 +1075,30 @@ Results:
   probe's doubled 118/s. The `destroy` hook holds.
 - The whole thing is a `destroy` + `ResizeObserver` + pointer events in one file;
   nothing in the core, the renderer or the builder changed to support it.
+
+## Capability enforcement (2026-10-15)
+
+The opt-in boundary, built. `core/capabilities.ts` + server wiring + a deb-installed
+root manifest. Off by default, as agreed: a manifest the agent enforces is not a
+manifest.
+
+- **Loader:** root-owned `/etc/sbh/capabilities.toml`, user fallback only when the
+  root file is absent. TOML nested tables (`[capabilities.fs.read]`) are flattened to
+  dotted names. A malformed root manifest fails **closed** (enabled, nothing allowed)
+  and reports why, so a typo cannot silently disable the boundary.
+- **Classification:** ACP `ToolKind` → capability; subject pulled from `rawInput`
+  (path / command / host), JSON-string or object.
+- **Evaluation:** fail closed everywhere — no rule denies, `ask` denies (no
+  click-to-allow), a scoped allow with no readable subject denies.
+- **Audit:** append-only JSONL at `~/.local/state/sbh/audit.log`, every core and UI
+  decision, with capability, subject, decision and reason.
+- **UI:** with the manifest on, the core answers and emits `permission.resolved`; the
+  notices bar shows recent denials. Off, nothing changes.
+- **Packaging:** Tauri `bundle.linux.deb.files` installs a disabled
+  `/etc/sbh/capabilities.toml` (dest → source). Verified in the built `.deb`.
+
+Verified in Chromium with a dev manifest: a granted `ls -la` ran with no card, a
+denied one was refused, the turn continued, and `policy denied · shell · ls -la`
+appeared. The audit log held all three sources (`manifest`, `ui`, `unattended`).
+
+Left: the pkexec switch UX (a Hub/Ryoku page to flip `enabled` and edit grants).

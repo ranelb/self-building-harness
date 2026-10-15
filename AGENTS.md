@@ -255,15 +255,42 @@ capability benchmark.
 
 ## Sessions
 
-`GET /sessions` lists past conversations (newest first, with a title taken from the
-first thing the user actually typed — injected skill text is stripped). `GET
-/sessions/<id>` returns the turns. `ctx.host.sessions` carries the list; the
-`sessions` host component renders it and dispatches `session.open`.
+`GET /sessions` lists past conversations from the **agent's own** `session/list`
+(the only store goose has; pi's files are the fallback), newest first. `ctx.host.
+sessions` carries the list; the `sessions` host component renders it and dispatches
+`session.open`, which asks the core to `session/load` it. The agent replays the
+conversation as events and the next message continues that session.
 
 **Read-only, permanently.** The app never writes, renames or deletes a harness
-session file — `pi` and `pi-web` must keep working on the same files, and a second
-writer is how a store gets corrupted. `SBH_SESSIONS_DIR` overrides the root.
+session file. `SBH_SESSIONS_DIR` overrides pi's store for the fallback path.
 
-**Viewing is not resuming.** Opening a session replaces what is on screen; the agent
-is still attached to its own session, so sending a message starts a new one. Resume
-needs a core capability that does not exist yet.
+## Capability enforcement (opt-in)
+
+**Off by default.** With no manifest, the core trusts the UI and whatever the
+agent-authored permission card answers is the answer. That is deliberate: the user
+runs their own harness, and a host that second-guesses them is a nanny.
+
+Turn it on and the core judges every ACP `session/request_permission` before the UI
+sees it, answering allow or deny itself. The card is then told the outcome
+(`permission.resolved`) and cannot overrule it. A toggle the policed party enforces
+is not a toggle.
+
+The manifest is **root-owned** — an agent runs as the user and can write anything
+the user can, so a user-writable policy is one the agent can rewrite:
+
+- `/etc/sbh/capabilities.toml` — authoritative, installed by the `.deb`
+  (`enabled = false`). The agent cannot edit it.
+- `~/.config/sbh/capabilities.toml` — consulted **only** when the root file is
+  absent, for development, not as a boundary.
+
+`examples/capabilities.toml` is the annotated reference. Capabilities come from
+ACP tool kinds (`fs.read`, `fs.write`, `shell`, `net`, `session.mode`, `other`);
+each rule is `allow` / `deny` / `ask` with optional path / command / host scopes.
+Everything fails closed: no rule is a deny, `ask` is a deny (there is no
+click-to-allow), and a scoped allow with no readable subject is a deny. Decisions
+are appended to `~/.local/state/sbh/audit.log`; recent denials also show in the
+notices bar.
+
+Enable it with root: `pkexec install -Dm644 examples/capabilities.toml
+/etc/sbh/capabilities.toml` after editing `enabled = true`. To judge a change
+without root, write the user-path file and restart the core.

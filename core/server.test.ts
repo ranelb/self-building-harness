@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { once } from 'node:events'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import WebSocket from 'ws'
@@ -199,5 +199,87 @@ describe('pickers and resume', () => {
       messages.some((m) => m.type === 'event' && m.event?.type === 'chunk' && m.event.text === 'earlier answer')
     )
     ws.close()
+  })
+})
+
+describe('capability manifest', () => {
+  const manifestFor = async (body: string | null) => {
+    const dir = await mkdtemp(join(tmpdir(), 'sbh-man-'))
+    const user = join(dir, 'capabilities.toml')
+    if (body !== null) await writeFile(user, body)
+    return { dir, user, root: join(dir, 'absent-root.toml'), audit: join(dir, 'audit.log') }
+  }
+
+  const start = async (paths: { root: string; user: string; audit: string }) => {
+    core = await startCore({
+      port: 0,
+      backend: 'fake:permission',
+      manifestRoot: paths.root,
+      manifestUser: paths.user,
+      auditPath: paths.audit,
+    })
+    const ws = new WebSocket(`ws://127.0.0.1:${core.port}/ws`)
+    const messages: any[] = []
+    await once(ws, 'open')
+    ws.on('message', (data) => messages.push(JSON.parse(String(data))))
+    return { ws, messages }
+  }
+
+  const resolved = (messages: any[]) =>
+    messages.find((m) => m.event?.type === 'permission.resolved')?.event
+
+  it('allows a granted tool call without asking the UI', async () => {
+    const paths = await manifestFor(
+      '[policy]\nenabled = true\n[capabilities.shell]\ndecision = "allow"\ncommands = ["ls *"]\n'
+    )
+    const { ws, messages } = await start(paths)
+    ws.send(JSON.stringify({ type: 'prompt', text: 'go' }))
+
+    await waitFor(() => resolved(messages))
+    expect(resolved(messages)).toMatchObject({ capability: 'shell', subject: 'ls -la', decision: 'allow' })
+    expect(messages.some((m) => m.event?.type === 'permission.requested')).toBe(false)
+    await waitFor(() => messages.some((m) => m.event?.type === 'chunk' && m.event.text === 'after'))
+    ws.close()
+    await rm(paths.dir, { recursive: true, force: true })
+  })
+
+  it('denies a tool call the manifest does not grant, and the turn continues', async () => {
+    const paths = await manifestFor(
+      '[policy]\nenabled = true\n[capabilities.shell]\ndecision = "allow"\ncommands = ["git *"]\n'
+    )
+    const { ws, messages } = await start(paths)
+    ws.send(JSON.stringify({ type: 'prompt', text: 'go' }))
+
+    await waitFor(() => resolved(messages))
+    expect(resolved(messages)).toMatchObject({ capability: 'shell', decision: 'deny' })
+    await waitFor(() => messages.some((m) => m.event?.type === 'chunk' && m.event.text === 'denied'))
+    ws.close()
+    await rm(paths.dir, { recursive: true, force: true })
+  })
+
+  it('writes the decision to the audit log', async () => {
+    const paths = await manifestFor('[policy]\nenabled = true\n[capabilities.shell]\ndecision = "allow"\n')
+    const { ws, messages } = await start(paths)
+    ws.send(JSON.stringify({ type: 'prompt', text: 'go' }))
+    await waitFor(() => resolved(messages))
+    await new Promise((r) => setTimeout(r, 150))
+    const line = JSON.parse((await readFile(paths.audit, 'utf8')).trim().split('\n')[0] as string)
+    expect(line).toMatchObject({ source: 'manifest', capability: 'shell', decision: 'allow' })
+    ws.close()
+    await rm(paths.dir, { recursive: true, force: true })
+  })
+
+  it('leaves the decision to the UI when the manifest is off', async () => {
+    const paths = await manifestFor(null)
+    const { ws, messages } = await start(paths)
+    ws.send(JSON.stringify({ type: 'prompt', text: 'go' }))
+
+    await waitFor(() => messages.some((m) => m.event?.type === 'permission.requested'))
+    const request = messages.find((m) => m.event?.type === 'permission.requested').event
+    expect(resolved(messages)).toBeUndefined()
+    ws.send(JSON.stringify({ type: 'permission', requestId: request.requestId, decision: 'allow' }))
+    await waitFor(() => messages.some((m) => m.event?.type === 'chunk' && m.event.text === 'after'))
+    ws.close()
+    await rm(paths.dir, { recursive: true, force: true })
   })
 })

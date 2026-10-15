@@ -109,6 +109,15 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
         }))
         return
       }
+      if (event.type === 'permission.resolved') {
+        // A manifest decision is not a question; keep the last few for the notices
+        // surface so a deny is visible without reading the audit log.
+        setData((previous) => {
+          const policy = Array.isArray(previous.policy) ? (previous.policy as unknown[]) : []
+          return { ...previous, policy: [event, ...policy].slice(0, 20) }
+        })
+        return
+      }
       setTranscript((previous) => applyEvent(previous, event))
     })
     connection.onState((key, value) => setData((previous) => ({ ...previous, [key]: value })))

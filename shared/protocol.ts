@@ -36,6 +36,16 @@ export type UiEvent =
     }
   | { type: 'usage'; used: number; size: number; cost?: unknown }
   | { type: 'config'; options: SessionConfigOption[] }
+  /** The core decided (manifest on), for display and the audit log. */
+  | {
+      type: 'permission.resolved'
+      requestId: string
+      title: string
+      capability: string
+      subject?: string
+      decision: 'allow' | 'deny'
+      reason: string
+    }
   | { type: 'turn.started' }
   | { type: 'turn.finished'; stopReason: string }
   | { type: 'error'; message: string }
