@@ -10,9 +10,10 @@ shipped as code**: each is a recipe you build as a component plus a layout entry
 that the first thing anyone does with SBH is extend it.
 
 **This is also SBH's capability benchmark.** Every recipe names the capability it
-needs. One marked **blocked** cannot be built yet without inventing a host API —
-which is a different job from building UI. Build the unblocked ones, and report the
-blocked ones instead of forcing them.
+needs. All four are buildable today; the settings recipe is **partial** — a control
+can persist to `localStorage`, but there is no shared, agent-visible store — and no
+recipe is **blocked**. Say so per recipe, and name a missing capability instead of
+inventing one.
 
 ## The loop, for every recipe
 
@@ -107,30 +108,21 @@ bar — that is a shell plugin in a different toolkit, not a webview. It can *di
 anything the core can read, and the core could equally publish a file a bar consumes.
 Say that plainly rather than implying the widget will appear in the bar.
 
-## 4. Sessions sidebar — buildable for viewing, blocked for resuming
+## 4. Sessions sidebar — buildable
 
-**Why:** a user wants to reopen yesterday's conversation.
+**Why:** a user wants to reopen yesterday's conversation and continue it.
 
 **Build:** a component reading `ctx.host.sessions` — `{ id, title, cwd, startedAt,
-updatedAt }`, newest first — and dispatching `session.open` with an id. The host
-fetches `GET /sessions/<id>` and replaces the transcript with its turns. The default
-layout already ships this as the `sessions` host component; restyle it or write your
-own.
+updatedAt }`, newest first — and dispatching `session.open` with an id. The host asks
+the core to `session/load` it: the agent replays the conversation as events, and the
+next message continues that session. The default layout already ships this as the
+`sessions` host component, with a filter and a count; restyle it or write your own.
 
-**Needs:** nothing new, for viewing. `GET /sessions` and `GET /sessions/<id>` exist,
-are read-only, and read the harness's own store.
+**Needs:** nothing new. `GET /sessions` lists the agent's own sessions (pi's file
+store is a fallback), read-only.
 
-**Acceptance:** past conversations are listed with titles you recognise, and opening
-one shows its turns.
-
-**Half-blocked, and say exactly this much:** viewing is not resuming. Opening a
-session replaces what is on screen; the agent is still attached to its own session,
-so sending a message starts a new one. Resuming needs the core to open an *existing*
-harness session, which does not exist yet. Report that gap; do not imply the sidebar
-continues the conversation.
-
-**To unblock:** the core opening an existing harness session — `session/load` over
-ACP, or the harness's own resume flag. That is core work, not a component.
+**Acceptance:** past conversations are listed with titles you recognise; opening one
+shows its history, and sending a message continues it rather than starting a new one.
 
 ---
 
@@ -139,8 +131,9 @@ ACP, or the harness's own resume flag. That is core work, not a component.
 When asked to run this as a benchmark, answer per recipe with one of:
 
 - **built** — it works, and say which of the three survival checks passed;
-- **partial** — say exactly which half works and which does not (the sessions sidebar
-  is the current example: viewing yes, resuming no);
+- **partial** — say exactly which half works and which does not (the settings recipe
+  is the current example: a control can persist to `localStorage`, but there is no
+  shared, agent-visible store);
 - **blocked** — name the missing host capability, in one line, and what would provide
   it.
 

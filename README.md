@@ -119,9 +119,14 @@ which harness is behind ACP.
 ## Status
 
 Desktop is usable and installed: streaming, permissions, session list and resume,
-hot-reloaded components and layout, theming, undo, a second backend, and an Arch
-package. The phone client is the remaining piece — deliberately a *client*, since
-the core is loopback HTTP/WebSocket. See [`HANDOFF.md`](HANDOFF.md).
+hot-reloaded components and layout, theming, undo, two backends, and an Arch package.
+A **phone surface** ships too — the core serves a different layout/theme/components
+per client-declared profile, and a companion server serves the built client and
+proxies the loopback core.
+
+What is left is not core work: **pairing** for the phone server (it has no auth and
+relies on the network), an upgrade path, and the daily-use reckoning. See
+[`HANDOFF.md`](HANDOFF.md).
 
 ## Documentation
 

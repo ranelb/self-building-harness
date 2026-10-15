@@ -262,6 +262,25 @@ events and the next message continues that session.
 **Read-only, permanently.** The app never writes a harness's session file.
 `SBH_SESSIONS_DIR` overrides pi's store for the fallback path.
 
+## Backends and the ACP client
+
+A backend is a registry entry: a command and arguments. `pi` (`pi-acp`) and `goose`
+(`goose acp`) are wired and verified. The core is the only thing that spawns one.
+
+Three things learned the hard way:
+
+- **An intentional close is not an error.** Switching backends, or shutting down,
+  closes the connection; an in-flight request is rejected by that close. The client
+tracks `closing` and does not emit an error for a teardown it asked for — otherwise
+  choosing a harness looks like a crash.
+- **`fake:` backends need the repo fixture on disk.** A packaged core has neither the
+  fixture nor a way to run it, and `process.execPath` is the core itself, so spawning
+  it just re-execs the core as a nested server. `isRunnableBackend` refuses it at
+  startup. Fake backends are a development seam; the package ships real ones.
+- **The core advertises its port** in `~/.local/state/sbh/core.json` (cleared on
+  exit). A companion reads it instead of pinning a port; the phone server re-reads it
+  per request, so a core restart on a new port just works.
+
 ## Capability enforcement (opt-in)
 
 **Off by default.** With no manifest the core trusts the UI, and whatever the

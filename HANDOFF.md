@@ -17,13 +17,14 @@ Desktop is usable and installed. The suite is green and needs no network or mode
 
 ```
 core/      the process: ACP, permissions, WS server, theme/layout/components,
-           versioning, watcher, machine sampling, sessions, capabilities
+           versioning, watcher, machine sampling, sessions, capabilities; the
+           `policy` CLI and the `phone` server are subcommands of the same binary
 shared/    the contract: protocol, UiNode/HostState, default layout, theme tokens
 src/ui/    renderer + built-in components + host components + state + loaders
 src-tauri/ the shell — spawns the core, opens the window, stops the core
 test/      scripted fake ACP agent + integration
-examples/  a component override, the benchmark component, the manifest reference
-packaging/ the Arch package and the sbh-policy wrapper
+examples/  a component override, the benchmark component, the manifest + phone surface
+packaging/ the Arch package, the sbh-policy / sbh-phone wrappers, a systemd user unit
 ```
 
 ## Verified, and not
@@ -51,22 +52,26 @@ surface. The companion phone server serves the built client and reverse-proxies 
 loopback core over HTTP and WebSocket; loading it as a phone (390×780) rendered the
 phone layout with no sidebar, and a prompt round-tripped through the proxy.
 
+**Verified on the host.** `sbh-phone` is installed and enabled as a systemd user
+unit; it discovers the running core's advertised port, proxies `/health` and
+`/layout?profile=phone`, and serves the phone client. Switching the backend from the
+phone (goose → Pi) followed by a prompt returns a real reply with no error.
+
 **Never verified:** a non-Arch install of the *package* (the `.deb` builds but is
-not installed anywhere), an upgrade path, and any mobile client — the remaining
-piece.
+not installed anywhere), an upgrade path, and any mobile client *off this machine* —
+the transport works locally, but a real phone over a tailnet has not been used.
 
 ## What is left
 
 ### Mobile
 
-Profiles (surfaces) and a companion phone server are in place: the core serves a
-layout/theme/component set per client-declared surface, and `npm run phone` serves
-the built client while reverse-proxying the loopback core. So the phone is a
-second *layout* and a proxy, not a fork. What remains is using it off-device —
-running the companion and fronting it with TLS — and deciding pairing. There is
-none today: the phone server has no auth, so it relies on the network (a tailnet,
-an ssh tunnel) for access control. That is a deliberate default, but it should be
-a documented one.
+Profiles (surfaces) and a companion phone server **ship and are installed**. The
+core serves a layout/theme/component set per client-declared surface, and `sbh-phone`
+(a systemd user unit) serves the built client while reverse-proxying the loopback
+core, discovering the core's advertised port. What remains is (a) using it on a real
+phone over a tailnet, and (b) **pairing**: there is no auth, so it relies on the
+network for access control. That is a deliberate default and is documented, but it
+is the one genuine gap — anyone who can reach the port drives the agent.
 
 ### Daily-driver quality
 
@@ -114,4 +119,15 @@ not just unit-tested.
   timer or `rAF` loop without a `destroy` runs forever against a detached node.
 - **The core resolves paths from its package root, not `cwd`**, and binds loopback
   only, by design.
+- **An intentional close is not an error.** Switching a backend (or shutting down)
+  closes the ACP connection; a request in flight is rejected by that close. Emitting
+  it as an error event made selecting a harness look like a crash. The client tracks
+  `closing` and stays quiet about a teardown it asked for.
+- **A packaged core cannot run a `fake:` backend.** The fixture is not on disk, and
+  `process.execPath` is the core itself, so it re-execs as a nested server (three
+  deep, once) and clobbers the advertised port file. `isRunnableBackend` refuses it
+  at startup. Fake backends are a development seam; keep real ones in the package.
+- **`tsc` does not compile Rust.** A dropped `mut` in the shell sat until `makepkg`
+  failed. Run `cargo check` after any `src-tauri/` change, separately from the JS
+  checks.
 - **`git commit -F`**, not `-m`, when the message contains backticks.

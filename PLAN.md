@@ -26,9 +26,10 @@ narrative is in [`docs/design.md`](docs/design.md); current state is in
 
 **Next.**
 
-- **Mobile client.** A second client of the same protocol. Needs a transport that
-  reaches the core off-device, and pairing that cannot widen the capability
-  boundary.
+- **Mobile: pairing.** The client, the surfaces and the companion server ship; the
+  transport reaches the core (front it with TLS) and a phone must not be able to
+  widen the capability boundary. What is missing is **auth** — the phone server has
+  none and relies on the network for access control.
 - **Published docs + `CATALOG.md`.** A generated component inventory so an agent can
   read what exists, and web-fetchable docs so a harness can bootstrap itself.
 - **Capability switch UI.** An in-app read-only view of grants and the audit tail;
