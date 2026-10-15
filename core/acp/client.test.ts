@@ -143,6 +143,25 @@ describe('connectAcp', () => {
     expect(finished?.stopReason).toBe('cancelled')
     conn.close()
   })
+
+  it('reads agent capabilities from initialize', async () => {
+    const conn = connectAcp(fake('happy'))
+    await conn.open()
+    expect(conn.capabilities()).toEqual({
+      image: true,
+      audio: false,
+      embeddedContext: false,
+      fork: true,
+    })
+    conn.close()
+  })
+
+  it('fork returns the new session id', async () => {
+    const conn = connectAcp(fake('happy'))
+    await conn.open()
+    expect(await conn.fork()).toBe('forked-session')
+    conn.close()
+  })
 })
 
 describe('closing', () => {

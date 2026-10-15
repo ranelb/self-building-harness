@@ -262,6 +262,21 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
         configOptions = event.options
         sendToAll({ type: 'state', key: 'model', value: modelState() })
       }
+      if (event.type === 'capabilities') {
+        // Not a transcript event: publish it on the state channel so the composer
+        // can gate the attacher honestly.
+        sendToAll({
+          type: 'state',
+          key: 'capabilities',
+          value: {
+            image: event.image,
+            audio: event.audio,
+            embeddedContext: event.embeddedContext,
+            fork: event.fork,
+          },
+        })
+        return
+      }
       broadcast(event)
     })
     conn = created
@@ -521,6 +536,23 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
 
       if (msg.type === 'session.new') {
         startNewSession()
+        return
+      }
+
+      if (msg.type === 'session.fork') {
+        void (async () => {
+          try {
+            const id = await ensureConnection().fork()
+            conn?.close()
+            conn = null
+            resumeTarget = { sessionId: id, cwd }
+            configOptions = []
+            void ensureConnection().open()
+            broadcast({ type: 'session.reset', reason: 'fork' })
+          } catch (error) {
+            broadcast({ type: 'error', message: (error as Error).message })
+          }
+        })()
         return
       }
 

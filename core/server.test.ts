@@ -145,6 +145,33 @@ describe('core server', () => {
     expect(messages.some((m) => m.event?.type === 'error')).toBe(false)
     ws.close()
   })
+
+  it('publishes agent capabilities as a state key', async () => {
+    core = await startCore({ port: 0, backend: 'fake:happy' })
+    const ws = new WebSocket(`ws://127.0.0.1:${core.port}/ws`)
+    const messages: any[] = []
+    await once(ws, 'open')
+    ws.on('message', (data) => messages.push(JSON.parse(String(data))))
+
+    await waitFor(() => messages.some((m) => m.type === 'state' && m.key === 'capabilities'))
+    const state = messages.find((m) => m.type === 'state' && m.key === 'capabilities')
+    expect(state.value).toMatchObject({ image: true, fork: true })
+    ws.close()
+  })
+
+  it('session.fork resets onto the forked session', async () => {
+    core = await startCore({ port: 0, backend: 'fake:happy' })
+    const ws = new WebSocket(`ws://127.0.0.1:${core.port}/ws`)
+    const messages: any[] = []
+    await once(ws, 'open')
+    ws.on('message', (data) => messages.push(JSON.parse(String(data))))
+    ws.send(JSON.stringify({ type: 'session.fork' }))
+
+    await waitFor(() =>
+      messages.some((m) => m.event?.type === 'session.reset' && m.event.reason === 'fork')
+    )
+    ws.close()
+  })
 })
 
 describe('origin guard', () => {

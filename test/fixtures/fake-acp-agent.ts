@@ -172,7 +172,11 @@ async function serve(scenario: Scenario): Promise<void> {
           id: msg.id,
           result: {
             protocolVersion: msg.params?.protocolVersion ?? PROTOCOL_VERSION,
-            agentCapabilities: {},
+            agentCapabilities: {
+              loadSession: true,
+              promptCapabilities: { image: true, audio: false, embeddedContext: false },
+              sessionCapabilities: { list: {}, fork: {} },
+            },
             agentInfo: { name: 'fake-acp-agent', version: '0.0.0' },
           },
         })
@@ -223,6 +227,10 @@ async function serve(scenario: Scenario): Promise<void> {
         replay({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'earlier answer' } })
         return
       }
+
+      case 'session/fork':
+        write({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 'forked-session' } })
+        return
 
       case 'session/set_config_option': {
         if (typeof msg.params?.value === 'string' && msg.params?.configId === 'model') {

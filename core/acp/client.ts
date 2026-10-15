@@ -23,6 +23,14 @@ export interface AcpSessionInfo {
   updatedAt: string
 }
 
+/** What the agent said it can do, from its `initialize` result. */
+export interface AgentCapabilities {
+  image: boolean
+  audio: boolean
+  embeddedContext: boolean
+  fork: boolean
+}
+
 export interface AcpConnection {
   /** Send a prompt; resolves when the turn settles (finished or errored). */
   prompt(text: string): Promise<void>
@@ -38,6 +46,10 @@ export interface AcpConnection {
   setConfigOption(configId: string, value: string): Promise<void>
   /** Cancel the in-flight turn (a `session/cancel` notification). */
   cancel(): Promise<void>
+  /** Agent capabilities from `initialize`. */
+  capabilities(): AgentCapabilities
+  /** Fork the current session; resolves to the new session id. */
+  fork(): Promise<string>
   close(): void
 }
 
@@ -245,9 +257,27 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
     // harness look like a crash.
     if (!closing) emit({ type: 'error', message: error.message })
   }
-  const ready = request('initialize', { protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} }).catch(
-    fail
-  )
+  let capabilitiesValue: AgentCapabilities = {
+    image: false,
+    audio: false,
+    embeddedContext: false,
+    fork: false,
+  }
+  const ready = request('initialize', { protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
+    .then((res: any) => {
+      const agentCaps = isRecord(res?.result?.agentCapabilities) ? res.result.agentCapabilities : {}
+      const promptCaps = isRecord(agentCaps.promptCapabilities) ? agentCaps.promptCapabilities : {}
+      const sessionCaps = isRecord(agentCaps.sessionCapabilities) ? agentCaps.sessionCapabilities : {}
+      capabilitiesValue = {
+        image: promptCaps.image === true,
+        audio: promptCaps.audio === true,
+        embeddedContext: promptCaps.embeddedContext === true,
+        fork: isRecord(sessionCaps.fork),
+      }
+      emit({ type: 'capabilities', ...capabilitiesValue })
+      return res
+    })
+    .catch(fail)
 
   // A session is created lazily — on the first prompt, or when a resume asks for
   // one. `session/list` must not create one, or merely opening the app would
@@ -326,6 +356,20 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
       // with stopReason `cancelled`. A no-op before the session exists.
       if (!sessionId) return
       send({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId } })
+    },
+
+    capabilities() {
+      return capabilitiesValue
+    },
+
+    async fork() {
+      await ensureSession()
+      if (handshakeError) throw handshakeError
+      if (!capabilitiesValue.fork) throw new Error('agent does not support session/fork')
+      const res = await request('session/fork', { sessionId, cwd: opts.cwd })
+      const id = res?.result?.sessionId
+      if (typeof id !== 'string') throw new Error('session/fork did not return a session id')
+      return id
     },
 
     async respondPermission(requestId, decision) {
