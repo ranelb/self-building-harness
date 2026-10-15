@@ -28,8 +28,8 @@ afterEach(async () => {
 
 describe('listSessions', () => {
   it('lists a session with its id, cwd and a title from the first user message', async () => {
-    await writeSession('--home-ran--', 'stamp_abc.jsonl', [
-      header('abc', '/home/ran', '2026-01-01T10:00:00.000Z'),
+    await writeSession('--home-user--', 'stamp_abc.jsonl', [
+      header('abc', '/home/user', '2026-01-01T10:00:00.000Z'),
       message('system', [{ type: 'text', text: 'system prompt' }]),
       message('user', [{ type: 'text', text: 'how do I make a meta harness?' }]),
       message('assistant', [{ type: 'text', text: 'by splitting it' }]),
@@ -39,7 +39,7 @@ describe('listSessions', () => {
     expect(sessions).toHaveLength(1)
     expect(sessions[0]).toMatchObject({
       id: 'abc',
-      cwd: '/home/ran',
+      cwd: '/home/user',
       startedAt: '2026-01-01T10:00:00.000Z',
       title: 'how do I make a meta harness?',
     })
@@ -47,8 +47,8 @@ describe('listSessions', () => {
   })
 
   it('truncates a very long first message', async () => {
-    await writeSession('--home-ran--', 'big.jsonl', [
-      header('big', '/home/ran', '2026-01-01T10:00:00.000Z'),
+    await writeSession('--home-user--', 'big.jsonl', [
+      header('big', '/home/user', '2026-01-01T10:00:00.000Z'),
       message('user', [{ type: 'text', text: 'x'.repeat(500) }]),
     ])
     const title = (await listSessions(root))[0]?.title ?? ''
@@ -57,8 +57,8 @@ describe('listSessions', () => {
   })
 
   it('titles a session from what the user typed, not the injected skill', async () => {
-    await writeSession('--home-ran--', 'skill.jsonl', [
-      header('sk', '/home/ran', '2026-01-01T10:00:00.000Z'),
+    await writeSession('--home-user--', 'skill.jsonl', [
+      header('sk', '/home/user', '2026-01-01T10:00:00.000Z'),
       message('user', [
         {
           type: 'text',
@@ -71,8 +71,8 @@ describe('listSessions', () => {
   })
 
   it('keeps looking past a message that is nothing but scaffolding', async () => {
-    await writeSession('--home-ran--', 'only-skill.jsonl', [
-      header('os', '/home/ran', '2026-01-01T10:00:00.000Z'),
+    await writeSession('--home-user--', 'only-skill.jsonl', [
+      header('os', '/home/user', '2026-01-01T10:00:00.000Z'),
       message('user', [{ type: 'text', text: '<skill name="x">body</skill>' }]),
       message('user', [{ type: 'text', text: 'the real question' }]),
     ])
@@ -81,12 +81,12 @@ describe('listSessions', () => {
   })
 
   it('sorts newest first across project directories', async () => {
-    await writeSession('--home-ran--', 'old.jsonl', [
-      header('old', '/home/ran', '2026-01-01T00:00:00.000Z'),
+    await writeSession('--home-user--', 'old.jsonl', [
+      header('old', '/home/user', '2026-01-01T00:00:00.000Z'),
       message('user', [{ type: 'text', text: 'old' }]),
     ])
-    await writeSession('--home-ran-projects--', 'new.jsonl', [
-      header('new', '/home/ran/projects', '2026-06-01T00:00:00.000Z'),
+    await writeSession('--home-user-projects--', 'new.jsonl', [
+      header('new', '/home/user/projects', '2026-06-01T00:00:00.000Z'),
       message('user', [{ type: 'text', text: 'new' }]),
     ])
 
@@ -96,9 +96,9 @@ describe('listSessions', () => {
   })
 
   it('ignores files that are not sessions, and sessions with no user message', async () => {
-    await writeSession('--home-ran--', 'notes.txt', ['not a session'])
-    await writeSession('--home-ran--', 'broken.jsonl', ['{ not json', header('h', '/x', 't')])
-    await writeSession('--home-ran--', 'empty.jsonl', [header('empty', '/home/ran', '2026-01-01T00:00:00.000Z')])
+    await writeSession('--home-user--', 'notes.txt', ['not a session'])
+    await writeSession('--home-user--', 'broken.jsonl', ['{ not json', header('h', '/x', 't')])
+    await writeSession('--home-user--', 'empty.jsonl', [header('empty', '/home/user', '2026-01-01T00:00:00.000Z')])
 
     const sessions = await listSessions(root)
     expect(sessions.map((s) => s.id)).toEqual(['empty'])
@@ -111,8 +111,8 @@ describe('listSessions', () => {
 
   it('honours the limit', async () => {
     for (let i = 0; i < 5; i += 1) {
-      await writeSession('--home-ran--', `s${i}.jsonl`, [
-        header(`id${i}`, '/home/ran', `2026-01-0${i + 1}T00:00:00.000Z`),
+      await writeSession('--home-user--', `s${i}.jsonl`, [
+        header(`id${i}`, '/home/user', `2026-01-0${i + 1}T00:00:00.000Z`),
         message('user', [{ type: 'text', text: `m${i}` }]),
       ])
     }
@@ -122,8 +122,8 @@ describe('listSessions', () => {
 
 describe('readSession', () => {
   const seed = async () =>
-    writeSession('--home-ran--', 'stamp_abc.jsonl', [
-      header('abc', '/home/ran', '2026-01-01T10:00:00.000Z'),
+    writeSession('--home-user--', 'stamp_abc.jsonl', [
+      header('abc', '/home/user', '2026-01-01T10:00:00.000Z'),
       message('system', [{ type: 'text', text: 'system prompt' }]),
       message('user', [{ type: 'text', text: 'hello' }]),
       message('assistant', [

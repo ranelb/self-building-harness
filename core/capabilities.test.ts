@@ -134,11 +134,11 @@ describe('evaluate', () => {
   })
 
   it('enforces a path allowlist, expanding ~ and covering directories', () => {
-    const m = manifest({ 'fs.write': { decision: 'allow', paths: ['~/Projects', '~/.local/share/ryoku/**'] } })
+    const m = manifest({ 'fs.write': { decision: 'allow', paths: ['~/Projects', '~/.config/**'] } })
     const at = (subject: string) => evaluate(m, { capability: 'fs.write', subjectKind: 'path', subject }).decision
     expect(at(join(homedir(), 'Projects/code/x.ts'))).toBe('allow')
     expect(at(join(homedir(), 'Projects'))).toBe('allow')
-    expect(at(join(homedir(), '.local/share/ryoku/rashin/AGENTS.md'))).toBe('allow')
+    expect(at(join(homedir(), '.config/sbh/theme.json'))).toBe('allow')
     expect(at('/etc/passwd')).toBe('deny')
     // a sibling prefix is not inside the grant
     expect(at(join(homedir(), 'Projects-evil/x'))).toBe('deny')

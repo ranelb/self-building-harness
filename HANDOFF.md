@@ -1,181 +1,107 @@
-# SBH — handoff
+# Handoff
 
-Read this file, then `AGENTS.md` (the contract and how to write a component), then
-`PLAN.md` (plan, status, roadmap, decision records). The design and the reasoning
-behind every choice live in the vault:
-`~/.local/share/ryoku/rashin/specs/2026-10-12-meta-harness-design.md`. Do not copy
-that here — one source of truth, N consumers.
+Read this for current state; the design and reasoning are in
+[`docs/design.md`](docs/design.md), and the contract for changing code is
+[`AGENTS.md`](AGENTS.md).
 
 ## What it is
 
-A barebones harness host whose entire interface is authored by an AI agent. The core
-owns the plumbing (agent connections, permissions, the wire) and the UI is a
-declarative tree the agent writes as files. "Self-building harness."
+A harness host whose interface an agent authors. The core owns the plumbing (agent
+connections, permissions, the wire); the UI is a tree of components the agent writes
+as files and the app hot-reloads.
 
 ## State
 
-53 commits · **182 tests / 25 files** · `tsc -b` clean · `git status` clean.
-`core`+`shared` ~2.3k · `src` ~1.6k lines of source. A `.deb` builds and runs.
+Desktop is usable and installed. The suite is green and needs no network or model;
+`npx tsc -b` is clean.
 
 ```
 core/      the process: ACP, permissions, WS server, theme/layout/components,
-           versioning, watcher, machine sampling, sessions
+           versioning, watcher, machine sampling, sessions, capabilities
 shared/    the contract: protocol, UiNode/HostState, default layout, theme tokens
-src/ui/    renderer + atoms + host components + state + loaders
-src-tauri/ the shell — Rust: spawns the core, opens the window, kills the core
+src/ui/    renderer + built-in components + host components + state + loaders
+src-tauri/ the shell — spawns the core, opens the window, stops the core
 test/      scripted fake ACP agent + integration
-.agents/skills/optional-basics/  recipes that double as the capability benchmark
+examples/  a component override, the benchmark component, the manifest reference
+packaging/ the Arch package and the sbh-policy wrapper
 ```
-
-## Running it
-
-```bash
-npm test          # 149 tests, no network, no model, ~1s
-npm run core      # the core, on ws://127.0.0.1:<SBH_PORT>/ws
-npx tauri dev     # the window — spawns its own core; first cargo build ~45s
-npm run build:core  # compile the core to a standalone binary (bun)
-npx tauri build --bundles deb   # a .deb with the core bundled in
-```
-
-Useful env: `SBH_BACKEND` (`pi`, `goose`, or `fake:happy|permission|usage|unknown-update|
-crash-mid-turn|split-multibyte`), `SBH_PORT`, `SBH_CONFIG_DIR`,
-`SBH_COMPONENTS_DIR`, `SBH_SESSIONS_DIR`, `SBH_ALLOWED_ORIGINS`.
-
-**A plain `&` background process dies with the invoking shell.** For a browser
-verification use transient systemd units — the exact recipe is in `AGENTS.md`
-§ "Verifying in a real browser".
 
 ## Verified, and not
 
-**Verified in Chromium against a live core:** streaming turns, the permission card
-gating and resuming a turn, theme restyling from one file, component and layout hot
-reload with no page reload, safe mode naming a broken component, revert removing it,
-machine samples, a context meter, 50 real sessions listed and one replayed. The
-origin guard was re-verified the same way (the app's own origin still connects; a
-stranger origin is refused on both the routes and the WebSocket).
+**Verified against real agents.** A turn streams end to end through the core for
+both **pi** (`pi-acp`) and **goose** (`goose acp`). Model selection
+(`session/set_config_option`), the session list (`session/list`) and resume
+(`session/load`) work against both.
 
-**Verified against a second backend:** `goose acp` (goose 1.54, speaks ACP
-natively) handshakes and completes a real turn through the core — `turn.started`,
-`usage`/`thought`/`chunk`, `turn.finished end_turn`, reply intact. This makes the
-central claim n=2.
+**Verified in a real window.** The Tauri/WebKitGTK window loads the embedded
+frontend, spawns the bundled core over loopback, and closing it reaps the core.
+Streaming, the permission card, theme/layout/component hot reload, safe mode and
+revert, the sessions sidebar with a filter, and an agent-authored canvas component
+were all confirmed visually.
 
-**Never verified:** an *installed* app on a non-Arch distro. The Arch package is
-built, installed and run (see below); the `.deb` is built but not installed
-anywhere, and there is no upgrade story.
+**Verified installed.** The Arch package installs root-owned system files; the
+installed `sbh` runs the same way. `sbh-policy` reads and edits the installed
+manifest. The capability manifest was exercised end to end: a granted tool call ran
+with no card, a denied one was refused, the turn continued, and the decision landed
+in the audit log.
+
+**Never verified:** a non-Arch install of the *package* (the `.deb` builds but is
+not installed anywhere), an upgrade path, and any mobile client — the remaining
+piece.
 
 ## What is left
 
-### It is not an app yet
-- ~~Tauri must spawn the core~~ — **done.** Development spawns Node + the repo
-  script; a packaged build spawns the bundled binary. Both verified.
-- ~~Open the window~~ — **done.** Verified on this Wayland session.
-- ~~Origin check~~ — **done.** Exact-match allowlist on every route and the WS.
-- ~~Packaging~~ — **done and installed.** `npm run build:core` compiles the core to
-  a standalone binary (`bun build --compile`, no Node on the target), shipped at
-  `binaries/sbh-core` and resolved from the resource dir. On Arch,
-  `cd packaging && makepkg -si` installs `sbh` — root-owned `/usr/bin/sbh`,
-  `/usr/bin/sbh-policy`, `/usr/lib/SBH/binaries/sbh-core`,
-  `/etc/sbh/capabilities.toml` (disabled), a `.desktop` and icons. Verified
-  installed: the window loads the embedded UI, spawns the bundled core, and closing
-  it reaps the core. The `.deb` still builds for Debian-family. Left: rpm/AppImage,
-  upgrades, and running installed on any non-Arch box.
+### Mobile
 
-### The thesis is proven enough
-- **A second backend** — `goose` works end to end, including its own session
-  list, model config option and resume. Still n=2; a third is untested.
-  - goose (1.54), even in `approve` mode, never sends
-    `session/request_permission`, so the permission gate is still only tested by
-    pi-acp and the fake fixture.
-- ~~Resume a session~~ — **done.** `session/load` replays the conversation as
-  events; `session/list` (the agent's own store, now the sidebar source) supplies
-  the ids. Works for pi and goose; verified in the browser.
-- ~~Real pickers~~ — **done.** The backend registry and the session's
-  `configOptions` feed the pickers over the state channel; switching reconnects.
-- ~~Transcript virtualization~~ — **done, as count-windowing.** Only the last 80
-  messages are in the DOM; older ones load a page at a time. Not position
-  virtualization (markdown heights are unknowable before layout), so the
-  guarantee is a bounded DOM, not a measured row.
+The next piece, and the reason the core is loopback-first: a phone client is
+another WebSocket consumer of the same protocol, not a rewrite. Open questions are
+transport off-device (the loopback core has no remote story yet), and pairing/auth,
+which should not be able to widen the capability boundary from a phone.
 
 ### Daily-driver quality
-- **Model picker depends on a session.** The list only arrives with a session, so
-  the core opens one on client connect; under goose that creates an empty "New
-  Chat" row each run.
-- **Transcript windowing is bounded, not measured** — a very tall single message
-  still costs its own height, and there is no search/jump-to-message.
-- **Settings store.** `localStorage` works; it is not shared between components, not
-  agent-visible, and not covered by revert.
 
-### Designed, never built
-- **Capability manifest — enforced, opt-in, off by default.** `core/capabilities.ts`
-  loads a root-owned TOML manifest (user fallback for dev), classifies ACP tool
-  calls, evaluates fail-closed, and audits. With it on the core decides and the UI
-  is told (`permission.resolved`); off, the agent-authored card answers as before.
-  The `.deb` installs a disabled `/etc/sbh/capabilities.toml` and `sbh-policy`, the
-  operator CLI that is the writer (SBH never elevates; you run it under pkexec,
-  sudo, doas, or a root shell). Design: `specs/2026-10-15-capability-manifest-design.md`.
-  Left: an in-app read-only view of grants and the audit tail.
-- **`CATALOG.md`** — the design's generated inventory of components + contract in the
-  UI directory, so an agent can read what exists. Does not exist.
-- **Published docs** a harness can `web_fetch`. Does not exist; `AGENTS.md` and this
-  file are the substitute.
-- **MCP Apps hosting** — ratified standard, and the sandbox host is ~80% built.
-- **Light/dark palettes** — the theme system supports swapping; only one theme ships.
-- **Ryoku theming** — deliberately deferred. The goal was an app an agent can restyle
-  to Ryoku by itself; nobody has tried.
+- **Position virtualization.** The transcript is windowed by count (a bounded DOM),
+  not measured; a very tall single message still costs its height, and there is no
+  search/jump.
+- **Settings store.** Component state is per-element and `localStorage`; there is no
+  shared, agent-visible, revertable store.
+- **The model list needs a session** to exist, so the core opens one on client
+  connect. Under goose that leaves an empty "New Chat" row per run.
+- **The composition of the shipped chrome** is still a small set of built-ins; a
+  generated component inventory (`CATALOG.md`) and web-fetchable docs are not built.
 
-### Deliberately deferred
-Mobile/PWA client · rpm/AppImage packaging and an install/update story · the
-repository split (**evaluated: don't**, until a second real client exists).
+### Extensions, designed but not built
 
-## Open decisions
-
-- ~~**Resume mechanism**~~ — **decided: ACP `session/load`.** Both pi-acp and goose
-  support it, and `session/list` gives the ids, so nothing harness-specific.
-- **Capability manifest shape**: global flag vs per-capability list. The evaluation
-  argues for the list; nothing is built.
-- **Root-gated policy**: a root-owned file outside any user-writable directory as the
-  policy source. Evaluated and recommended; not built.
+- **MCP Apps hosting** — a ratified MCP extension; the sandbox host is most of the
+  machinery and was deferred, not rejected.
+- **A capability switch UI** in the app: today `sbh-policy` is the interface, and
+  the app only displays grants and recent denials.
 
 ## Traps
 
-Each of these cost real time. They are in `PLAN.md` in more detail.
+Each of these cost real time; they are the reason a change here should be rendered,
+not just unit-tested.
 
-- **Twelve bugs were found by running the thing; the 149-test suite found none of
-  them.** A DOM assertion proves an element exists, not that it looks right. Render it.
-- **WebKitGTK is not Chromium.** `applyLayout` set only `min-width:0` on growing
-  flex items; WebKit's automatic minimum size let the 50-entry session list stretch
-  the root row to 1575px inside a 974px parent, pushing the composer to y=1548,
-  off-screen. `min-height:0` too fixes it. Chromium had absorbed it silently.
-- **A transparent-looking Tauri window is usually Hyprland.** The wallpaper showed
-  through the shell because the window was unfocused and this config sets
-  `inactive_opacity = 0.9` + blur. The app is opaque when focused; do not chase it.
-- A shared layout helper stamped `data-atom` over a component's own attribute. Two
-  components using one styling helper will collide over `data-atom`.
-- The browser **caches ES modules by URL for the page's lifetime and ignores
-  `cache-control`** — hot reload silently only worked for *new* files until the URL
-  got a `?rev=` cache-buster.
-- `update` was never called after `create`, so a component that paints in `update`
-  rendered blank on first mount. Mount is now create + update.
-- A module-level sampler global made tests order-dependent. Prefer explicit instances.
-- Reconciliation keyed on node *type* alone, so overriding a component under the same
-  name patched a stale element with the new implementation's `update`.
-- `git init` on an empty directory stages nothing — hence an explicit empty baseline.
-- Use `git commit -F <file>`. Backticks inside `-m "…"` run as command substitutions
-  and silently mangle the message. (I did this twice.)
-- The core resolves paths from its own package root, not `cwd`; and it binds loopback
+- **Many bugs passed the whole suite and were only visible by running the thing.**
+  A DOM assertion proves an element exists, not that it looks right.
+- **WebKitGTK is not Chromium.** A flex bug that collapsed a 50-row list to 50
+  hairlines showed only in WebKit, and a Canvas/DOM layout that Chromium absorbed
+  did not. Always check the real window, and always with the window *focused* —
+  an unfocused window can look transparent because of the compositor's opacity.
+- **A bare `cargo build --release` leaves the Tauri app in dev mode.** Build the
+  release binary through the Tauri CLI (`npx tauri build --no-bundle`); otherwise
+  the window loads the dev server URL and shows "connection refused".
+- **WebKitGTK's DMA-BUF renderer can kill the window before it shows** on an
+  NVIDIA + Wayland stack, orphaning the core the shell already spawned. The shell
+  sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` itself. Orphaned `sbh-core` processes mean
+  an app died after spawning one.
+- **A list inside a flex column shrinks its rows.** Give rows `flex-shrink: 0` and
+  scroll an inner container.
+- **The browser caches ES modules by URL for the page's lifetime**, ignoring
+  `cache-control`, so component hot reload silently only works for *new* files
+  unless the URL carries a cache-buster.
+- **Reconciliation replaces elements routinely** (hot reload, a layout edit), so a
+  timer or `rAF` loop without a `destroy` runs forever against a detached node.
+- **The core resolves paths from its package root, not `cwd`**, and binds loopback
   only, by design.
-
-## Where to start
-
-1. **Capability manifest** — the honest form of "full system integration": named
-   capabilities, default-deny, policy in a root-owned file, approved through the
-   same UI as tool calls. Designed, never built (`PLAN.md` has the evaluation).
-2. `CATALOG.md` + published docs, per the design.
-3. MCP Apps hosting; light/dark palettes; Ryoku theming (deliberately deferred).
-
-The four-item roadmap batch (pickers, resume, virtualization, packaging) is done.
-Remaining small gaps are listed above; the largest is the capability manifest.
-
-To check capability instead of reading: run the `optional-basics` skill as a benchmark
-and report per recipe — **built** / **partial** / **blocked**, naming the missing host
-capability. Its verdicts are already corrected once; keep them honest.
+- **`git commit -F`**, not `-m`, when the message contains backticks.

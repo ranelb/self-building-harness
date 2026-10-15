@@ -12,7 +12,7 @@
  * manifest exists only so this can be tried without root, and only when the
  * root-owned one is absent.
  *
- * See `~/.local/share/ryoku/rashin/specs/2026-10-15-capability-manifest-design.md`.
+ * See `docs/design.md` (the capability model section).
  */
 import { appendFile, mkdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'

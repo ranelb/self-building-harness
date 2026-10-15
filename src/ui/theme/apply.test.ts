@@ -27,9 +27,9 @@ describe('applyTheme', () => {
 describe('loadTheme', () => {
   it('reads and merges the theme from the core', async () => {
     const theme = await loadTheme('http://core', async () =>
-      jsonResponse({ name: 'ryoku', color: { accent: '#ff00aa' } })
+      jsonResponse({ name: 'custom-theme', color: { accent: '#ff00aa' } })
     )
-    expect(theme.name).toBe('ryoku')
+    expect(theme.name).toBe('custom-theme')
     expect(theme.color.accent).toBe('#ff00aa')
     expect(theme.color.text).toBe(DEFAULT_THEME.color.text)
   })

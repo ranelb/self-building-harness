@@ -31,8 +31,8 @@ describe('toCssVariables', () => {
 
 describe('mergeTheme', () => {
   it('applies a partial override and keeps the rest', () => {
-    const merged = mergeTheme(DEFAULT_THEME, { name: 'ryoku', color: { accent: '#ff00aa' } })
-    expect(merged.name).toBe('ryoku')
+    const merged = mergeTheme(DEFAULT_THEME, { name: 'custom-theme', color: { accent: '#ff00aa' } })
+    expect(merged.name).toBe('custom-theme')
     expect(merged.color.accent).toBe('#ff00aa')
     expect(merged.color.text).toBe(DEFAULT_THEME.color.text)
     expect(merged.space.md).toBe(DEFAULT_THEME.space.md)

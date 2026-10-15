@@ -31,10 +31,10 @@ enabled = false
 # ~/.local/state/sbh/audit.log.
 audit = true
 
-# Read anywhere under your projects and the vault.
+# Read anywhere under your projects and your config.
 [capabilities.fs.read]
 decision = "allow"
-paths = ["~/Projects/**", "~/.local/share/ryoku/rashin/**"]
+paths = ["~/Projects/**", "~/.config/**"]
 
 # Writes are refused and shown. Add paths to grant them.
 [capabilities.fs.write]
