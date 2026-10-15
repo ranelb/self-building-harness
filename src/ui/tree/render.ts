@@ -243,13 +243,22 @@ export function renderTree(node: UiNode, ctx: RenderContext): Node {
 }
 
 /**
+ * Apply the layout props a node carries.
+ *
  * Shared layout props, so a template can lay itself out without injecting CSS.
  * Deliberately a small fixed vocabulary rather than a style passthrough.
+ *
+ * A growing flex item needs `min-width:0` *and* `min-height:0`: without them its
+ * automatic minimum size is its content, so a tall child (the session list)
+ * stretches the container past its parent instead of scrolling. Chromium
+ * happened to absorb that; WebKitGTK did not, and pushed the composer below the
+ * window.
  */
 export function applyLayout(el: HTMLElement, node: UiNode): void {
   if (node.props?.grow) {
     el.style.flexGrow = '1'
     el.style.minWidth = '0'
+    el.style.minHeight = '0'
   }
 }
 

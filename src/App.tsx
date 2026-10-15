@@ -16,7 +16,10 @@ import {
 import { getLive, renderInto, setLive, type HostState, type RenderContext, type SessionSummary, type UiNode } from './ui/tree/render.ts'
 import { DEFAULT_LAYOUT } from '../shared/layout.ts'
 
-const DEFAULT_CORE_URL = import.meta.env.VITE_CORE_URL ?? 'ws://127.0.0.1:8787/ws'
+const DEFAULT_CORE_URL =
+  (globalThis as { __SBH_CORE_URL__?: string }).__SBH_CORE_URL__ ??
+  import.meta.env.VITE_CORE_URL ??
+  'ws://127.0.0.1:8787/ws'
 
 export interface AppProps {
   coreUrl?: string
