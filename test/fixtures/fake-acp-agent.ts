@@ -26,6 +26,20 @@ export type Scenario = (typeof SCENARIOS)[number]
 export const SESSION_ID = 'fake-session-1'
 export const PROTOCOL_VERSION = 1
 
+/** The model picker's data source; `set_config_option` rewrites `currentValue`. */
+export const FAKE_MODELS = ['model-a', 'model-b', 'model-c'] as const
+
+const configOptions = (currentModel: string) => [
+  {
+    id: 'model',
+    name: 'Model',
+    category: 'model',
+    type: 'select',
+    currentValue: currentModel,
+    options: FAKE_MODELS.map((model) => ({ value: model, name: model.toUpperCase() })),
+  },
+]
+
 const SELF = fileURLToPath(import.meta.url)
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
@@ -122,6 +136,7 @@ async function runScenario(
 
 async function serve(scenario: Scenario): Promise<void> {
   let nextId = 100
+  let model: string = FAKE_MODELS[0]
   const pending = new Map<number, (msg: any) => void>()
 
   const sendRequest = (method: string, params: unknown): Promise<any> => {
@@ -163,7 +178,48 @@ async function serve(scenario: Scenario): Promise<void> {
           write({ jsonrpc: '2.0', id: msg.id, error: { code: -32602, message: 'Invalid params' } })
           return
         }
-        write({ jsonrpc: '2.0', id: msg.id, result: { sessionId: SESSION_ID } })
+        write({
+          jsonrpc: '2.0',
+          id: msg.id,
+          result: {
+            sessionId: SESSION_ID,
+            configOptions: configOptions(model),
+            modes: { currentModeId: 'auto', availableModes: [{ id: 'auto', name: 'auto' }] },
+          },
+        })
+        return
+      }
+
+      case 'session/list':
+        write({
+          jsonrpc: '2.0',
+          id: msg.id,
+          result: {
+            sessions: [
+              { sessionId: 'saved-1', cwd: process.cwd(), title: 'First chat', updatedAt: '2026-01-02T00:00:00Z' },
+              { sessionId: 'saved-2', cwd: process.cwd(), title: 'Second chat', updatedAt: '2026-01-01T00:00:00Z' },
+            ],
+            nextCursor: null,
+          },
+        })
+        return
+
+      case 'session/load': {
+        // Loading replays the conversation, then leaves the agent attached to it.
+        const loaded = String(msg.params?.sessionId ?? '')
+        write({ jsonrpc: '2.0', id: msg.id, result: { configOptions: configOptions(model) } })
+        const replay = (update: unknown) =>
+          write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: loaded, update } })
+        replay({ sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'earlier question' } })
+        replay({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'earlier answer' } })
+        return
+      }
+
+      case 'session/set_config_option': {
+        if (typeof msg.params?.value === 'string' && msg.params?.configId === 'model') {
+          model = msg.params.value
+        }
+        write({ jsonrpc: '2.0', id: msg.id, result: { configOptions: configOptions(model) } })
         return
       }
 

@@ -32,6 +32,13 @@ export function normalizeUpdate(update: unknown): UiEvent[] {
       return text === null ? [] : [{ type: 'chunk', text }]
     }
 
+    case 'user_message_chunk': {
+      // Only replay (`session/load`) sends this; a live turn does not, so it never
+      // duplicates the message the composer already added.
+      const text = textOf(update.content)
+      return text === null ? [] : [{ type: 'user.chunk', text }]
+    }
+
     case 'agent_thought_chunk': {
       const text = textOf(update.content)
       return text === null ? [] : [{ type: 'thought', text }]

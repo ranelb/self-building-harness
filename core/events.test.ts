@@ -14,6 +14,12 @@ describe('normalizeUpdate', () => {
     ).toEqual([{ type: 'thought', text: 'why' }])
   })
 
+  it('maps a user message chunk (replay only) to a user chunk', () => {
+    expect(
+      normalizeUpdate({ sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'asked' } })
+    ).toEqual([{ type: 'user.chunk', text: 'asked' }])
+  })
+
   it('maps a tool call to a tool event, NOT a permission request', () => {
     // Permission arrives on its own channel (an inbound session/request_permission
     // request); conflating the two was a bug in the original plan.

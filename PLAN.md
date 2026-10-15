@@ -983,3 +983,25 @@ Diagnosis method, since it will recur: inject a throwaway script into `index.htm
 (served by Vite, no Rust rebuild) that prints `getBoundingClientRect` for every
 `[data-atom]` into a fixed overlay, then screenshot. The DOM numbers named the bug
 in one pass after two wrong guesses about transparency.
+
+## Roadmap batch: pickers, resume, virtualization, packaging (2026-10-15, in progress)
+
+Order chosen: pickers+resume first (shared ACP session lifecycle), then
+virtualization (UI), then packaging (wraps the finished app).
+
+Verified seams (probed against real agents, not assumed):
+- both `pi-acp` and `goose acp` advertise `loadSession` and return `configOptions`
+  with a `model` option (category `model`); `session/set_config_option {sessionId,
+  configId, value}` switches it.
+- both answer `session/list {}` (no cwd filter) with 50 sessions + a cursor, each
+  entry `{sessionId, cwd, title, updatedAt}`.
+- `session/load {sessionId, cwd, mcpServers}` replays via `session/update`
+  (`user_message_chunk`, `agent_message_chunk`, `tool_call`, …).
+- pi's file-store header `id` is the same UUID as its ACP `sessionId`, so the
+  sidebar's ids are already resumable.
+- a *live* turn emits no `user_message_chunk`; only replay does.
+
+- [ ] pickers: ACP `configOptions` → model; backend registry → harness; reconnect on switch
+- [ ] resume: ACP `session/list` + `session/load`; sidebar ids become ACP ids
+- [ ] virtualization: windowed transcript rendering
+- [ ] packaging: sidecar-bundle the core

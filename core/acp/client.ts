@@ -12,8 +12,16 @@
  */
 import { spawn } from 'node:child_process'
 import { normalizePermissionRequest, normalizeUpdate, type UiEvent } from '../events.ts'
+import type { SessionConfigOption } from '../../shared/protocol.ts'
 
 const PROTOCOL_VERSION = 1
+
+export interface AcpSessionInfo {
+  sessionId: string
+  cwd: string
+  title: string
+  updatedAt: string
+}
 
 export interface AcpConnection {
   /** Send a prompt; resolves when the turn settles (finished or errored). */
@@ -22,6 +30,10 @@ export interface AcpConnection {
   respondPermission(requestId: string, decision: 'allow' | 'deny'): Promise<void>
   /** Subscribe to UI events. Multiple subscribers are allowed. */
   onEvent(cb: (event: UiEvent) => void): void
+  /** List the agent's saved sessions (one page). Does not create a session. */
+  list(cursor?: string): Promise<{ sessions: AcpSessionInfo[]; nextCursor: string | null }>
+  /** Set a session config option (the model picker uses this). */
+  setConfigOption(configId: string, value: string): Promise<void>
   close(): void
 }
 
@@ -29,6 +41,8 @@ export interface ConnectOptions {
   command: string
   args: string[]
   cwd: string
+  /** Resume an existing session instead of creating a new one. */
+  resume?: { sessionId: string; cwd?: string }
 }
 
 interface Pending {
@@ -88,6 +102,29 @@ export function choosePermissionOption(
   )
 }
 
+/** Map ACP `configOptions` to the wire shape, ignoring malformed entries. */
+export function readConfigOptions(raw: unknown): SessionConfigOption[] {
+  if (!Array.isArray(raw)) return []
+  const options: SessionConfigOption[] = []
+  for (const entry of raw) {
+    if (!isRecord(entry) || typeof entry.id !== 'string') continue
+    const values = Array.isArray(entry.options) ? entry.options : []
+    options.push({
+      id: entry.id,
+      name: typeof entry.name === 'string' ? entry.name : entry.id,
+      ...(typeof entry.category === 'string' ? { category: entry.category } : {}),
+      currentValue: typeof entry.currentValue === 'string' ? entry.currentValue : '',
+      options: values
+        .filter((value): value is Record<string, unknown> => isRecord(value) && typeof value.value === 'string')
+        .map((value) => ({
+          value: value.value as string,
+          label: typeof value.name === 'string' ? value.name : (value.value as string),
+        })),
+    })
+  }
+  return options
+}
+
 export function connectAcp(opts: ConnectOptions): AcpConnection {
   const child = spawn(opts.command, opts.args, {
     cwd: opts.cwd,
@@ -97,6 +134,10 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
   const listeners: ((event: UiEvent) => void)[] = []
   const emit = (event: UiEvent) => {
     for (const listener of listeners) listener(event)
+  }
+  const emitConfig = (raw: unknown) => {
+    const options = readConfigOptions(raw)
+    if (options.length > 0) emit({ type: 'config', options })
   }
 
   let nextId = 1
@@ -191,16 +232,41 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
   // agent that answers `initialize` with a JSON-RPC error would crash the whole
   // core through an unhandled rejection. Found by running real pi-acp.
   let handshakeError: Error | null = null
-  const ready = (async () => {
-    await request('initialize', { protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
-    // `mcpServers` is required by NewSessionRequest alongside `cwd`, not optional.
-    // Omitting it is rejected with "Invalid params" by a real agent.
-    const created = await request('session/new', { cwd: opts.cwd, mcpServers: [] })
-    sessionId = created?.result?.sessionId ?? null
-  })().catch((err: Error) => {
-    handshakeError = err
-    emit({ type: 'error', message: err.message })
-  })
+  const fail = (error: Error) => {
+    handshakeError = error
+    emit({ type: 'error', message: error.message })
+  }
+  const ready = request('initialize', { protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} }).catch(
+    fail
+  )
+
+  // A session is created lazily — on the first prompt, or when a resume asks for
+  // one. `session/list` must not create one, or merely opening the app would
+  // litter the agent's store with empty sessions.
+  let sessionReady: Promise<void> | null = null
+  const ensureSession = (): Promise<void> => {
+    if (sessionReady) return sessionReady
+    sessionReady = (async () => {
+      await ready
+      if (handshakeError) return
+      if (opts.resume) {
+        const loaded = await request('session/load', {
+          sessionId: opts.resume.sessionId,
+          cwd: opts.resume.cwd ?? opts.cwd,
+          mcpServers: [],
+        })
+        sessionId = opts.resume.sessionId
+        emitConfig(loaded?.result?.configOptions)
+        return
+      }
+      // `mcpServers` is required by NewSessionRequest alongside `cwd`, not optional.
+      // Omitting it is rejected with "Invalid params" by a real agent.
+      const created = await request('session/new', { cwd: opts.cwd, mcpServers: [] })
+      sessionId = created?.result?.sessionId ?? null
+      emitConfig(created?.result?.configOptions)
+    })().catch(fail)
+    return sessionReady
+  }
 
   return {
     onEvent(cb) {
@@ -208,7 +274,7 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
     },
 
     async prompt(text) {
-      await ready
+      await ensureSession()
       if (handshakeError) return
       emit({ type: 'turn.started' })
       try {
@@ -220,6 +286,26 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
       } catch (err) {
         emit({ type: 'error', message: (err as Error).message })
       }
+    },
+
+    async list(cursor) {
+      await ready
+      if (handshakeError) throw handshakeError
+      const res = await request('session/list', cursor ? { cursor } : {})
+      const sessions: AcpSessionInfo[] = (res?.result?.sessions ?? []).map((entry: any) => ({
+        sessionId: String(entry?.sessionId ?? ''),
+        cwd: String(entry?.cwd ?? ''),
+        title: typeof entry?.title === 'string' ? entry.title : '',
+        updatedAt: String(entry?.updatedAt ?? ''),
+      }))
+      return { sessions, nextCursor: res?.result?.nextCursor ?? null }
+    },
+
+    async setConfigOption(configId, value) {
+      await ensureSession()
+      if (handshakeError) return
+      const res = await request('session/set_config_option', { sessionId, configId, value })
+      emitConfig(res?.result?.configOptions)
     },
 
     async respondPermission(requestId, decision) {

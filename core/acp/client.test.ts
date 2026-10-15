@@ -88,6 +88,40 @@ describe('connectAcp', () => {
     conn.close()
   })
 
+  it('lists the agent sessions without creating one', async () => {
+    const conn = connectAcp(fake('happy'))
+    const { sessions, nextCursor } = await conn.list()
+    expect(sessions.map((s) => s.sessionId)).toEqual(['saved-1', 'saved-2'])
+    expect(sessions[0]).toMatchObject({ title: 'First chat', cwd: process.cwd() })
+    expect(nextCursor).toBeNull()
+    conn.close()
+  })
+
+  it('reports session config options and updates them', async () => {
+    const conn = connectAcp(fake('happy'))
+    const events = collect(conn)
+    await conn.setConfigOption('model', 'model-b')
+    const configs = events.filter((e): e is Extract<UiEvent, { type: 'config' }> => e.type === 'config')
+    const latest = configs[configs.length - 1]
+    expect(latest?.options).toEqual([
+      expect.objectContaining({ id: 'model', category: 'model', currentValue: 'model-b' }),
+    ])
+    conn.close()
+  })
+
+  it('resumes an existing session and replays its history as events', async () => {
+    const conn = connectAcp({ ...fake('happy'), resume: { sessionId: 'saved-1' } })
+    const events = collect(conn)
+    await conn.prompt('again')
+    const text = events
+      .filter((e) => e.type === 'chunk' || e.type === 'user.chunk')
+      .map((e) => (e as { text: string }).text)
+      .join('|')
+    expect(text).toContain('earlier question')
+    expect(text).toContain('earlier answer')
+    conn.close()
+  })
+
   it('reassembles a chunk split across a multibyte boundary', async () => {
     const conn = connectAcp(fake('split-multibyte'))
     const events = collect(conn)

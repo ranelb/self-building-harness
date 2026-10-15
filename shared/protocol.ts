@@ -5,12 +5,28 @@
  * without importing core code — one definition, two consumers.
  */
 
+/**
+ * A session's configuration selectors, as the agent reports them.
+ *
+ * The model picker is the `model`-category entry; nothing in the UI knows that
+ * the agent calls it "model", only that a category exists.
+ */
+export interface SessionConfigOption {
+  id: string
+  name: string
+  category?: string
+  currentValue: string
+  options: { value: string; label: string }[]
+}
+
 export type UiEvent =
   | { type: 'chunk'; text: string }
+  | { type: 'user.chunk'; text: string }
   | { type: 'thought'; text: string }
   | { type: 'tool'; toolCallId: string; title: string; status?: string }
   | { type: 'permission.requested'; requestId: string; title: string }
   | { type: 'usage'; used: number; size: number; cost?: unknown }
+  | { type: 'config'; options: SessionConfigOption[] }
   | { type: 'turn.started' }
   | { type: 'turn.finished'; stopReason: string }
   | { type: 'error'; message: string }
@@ -19,6 +35,12 @@ export type UiEvent =
 export type ClientToCore =
   | { type: 'prompt'; text: string }
   | { type: 'permission'; requestId: string; decision: 'allow' | 'deny' }
+  /** Switch the agent backend; the core reconnects. */
+  | { type: 'backend'; id: string }
+  /** Set the agent's model config option. */
+  | { type: 'model'; id: string }
+  /** Load an existing session; the agent replays it as events. */
+  | { type: 'session.resume'; id: string; cwd: string }
 
 /** Core -> client. */
 export type CoreToClient =
