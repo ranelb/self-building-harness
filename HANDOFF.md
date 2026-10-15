@@ -14,7 +14,7 @@ declarative tree the agent writes as files. "Self-building harness."
 
 ## State
 
-39 commits · **134 tests / 22 files** · `tsc -b` clean · `git status` clean.
+41 commits · **134 tests / 22 files** · `tsc -b` clean · `git status` clean.
 `core`+`shared` ~1.6k · `src` ~1.5k lines of source.
 
 ```
@@ -22,7 +22,7 @@ core/      the process: ACP, permissions, WS server, theme/layout/components,
            versioning, watcher, machine sampling, sessions
 shared/    the contract: protocol, UiNode/HostState, default layout, theme tokens
 src/ui/    renderer + atoms + host components + state + loaders
-src-tauri/ the shell — Rust, compiles, NEVER LAUNCHED
+src-tauri/ the shell — Rust: spawns the core, opens the window, kills the core
 test/      scripted fake ACP agent + integration
 .agents/skills/optional-basics/  recipes that double as the capability benchmark
 ```
@@ -30,9 +30,9 @@ test/      scripted fake ACP agent + integration
 ## Running it
 
 ```bash
-npm test          # 116 tests, no network, no model, ~1s
+npm test          # 134 tests, no network, no model, ~1s
 npm run core      # the core, on ws://127.0.0.1:<SBH_PORT>/ws
-npx tauri dev     # the window — first cargo build ~45s
+npx tauri dev     # the window — spawns its own core; first cargo build ~45s
 ```
 
 Useful env: `SBH_BACKEND` (`pi`, `goose`, or `fake:happy|permission|usage|unknown-update|
@@ -57,21 +57,25 @@ natively) handshakes and completes a real turn through the core — `turn.starte
 `usage`/`thought`/`chunk`, `turn.finished end_turn`, reply intact. This makes the
 central claim n=2.
 
-**Never verified:** anything inside Tauri. WebKitGTK is not Chromium, and this is the
-largest untested surface in the project. The Rust shell compiles; the window has never
-opened, and no core has ever been spawned by the shell.
+**Never verified:** anything *shipped*. Development works, but there is no
+sidecar bundling, no port handshake for a packaged build, and nothing has been
+packaged. The window runs against the repo's `core/index.ts` by path.
 
 ## What is left
 
 ### It is not an app yet
-- **Tauri must spawn the core.** Today a terminal starts it first. Needs sidecar
-  bundling, a port handshake, lifecycle, and killing it on exit. **This is the whole
-  distance between "project" and "program".**
-- **Open the window.** See above.
+- ~~Tauri must spawn the core~~ — **done (development).** The shell spawns the core
+  on a free port, reads the port off its stdout, injects the URL into the webview,
+  and stops the core on exit. What is left is **packaging**: today it resolves
+  `core/index.ts` from the repo (`CARGO_MANIFEST_DIR/..`, or `SBH_ROOT`); a bundled
+  build ships the core as a sidecar resource instead. See `AGENTS.md` for the run
+  recipe.
+- ~~Open the window~~ — **done.** Verified on this Wayland session: the window
+  opens, the webview connects to the spawned core over loopback, and a streamed
+  turn renders. WebKitGTK found a layout bug Chromium hid (see the trap below).
 - ~~No origin check~~ — **done.** Exact-match allowlist (Vite dev + Tauri origins,
   extended by `SBH_ALLOWED_ORIGINS`), enforced on every route and the WebSocket
-  upgrade; a missing `Origin` is still admitted for non-browser clients. Re-verify
-  when Tauri introduces the packaged origin (`tauri://localhost` is already listed).
+  upgrade; a missing `Origin` is still admitted for non-browser clients.
 
 ### The thesis is unproven
 - ~~A second backend~~ — **done, with two gaps.** `goose` is in the registry and a
@@ -126,8 +130,15 @@ Mobile/PWA client · packaging and an install story · the repository split
 
 Each of these cost real time. They are in `PLAN.md` in more detail.
 
-- **Eight bugs were found by running the thing; the 116-test suite found none of
+- **Nine bugs were found by running the thing; the 134-test suite found none of
   them.** A DOM assertion proves an element exists, not that it looks right. Render it.
+- **WebKitGTK is not Chromium.** `applyLayout` set only `min-width:0` on growing
+  flex items; WebKit's automatic minimum size let the 50-entry session list stretch
+  the root row to 1575px inside a 974px parent, pushing the composer to y=1548,
+  off-screen. `min-height:0` too fixes it. Chromium had absorbed it silently.
+- **A transparent-looking Tauri window is usually Hyprland.** The wallpaper showed
+  through the shell because the window was unfocused and this config sets
+  `inactive_opacity = 0.9` + blur. The app is opaque when focused; do not chase it.
 - A shared layout helper stamped `data-atom` over a component's own attribute. Two
   components using one styling helper will collide over `data-atom`.
 - The browser **caches ES modules by URL for the page's lifetime and ignores
@@ -146,11 +157,15 @@ Each of these cost real time. They are in `PLAN.md` in more detail.
 
 ## Where to start
 
-1. **Tauri spawns the core; open the window.** Needs a human at the machine, and
-   unblocks everything. The origin guard is already in place for it.
-2. Resume → real pickers (backend switching) → optional-basics capability pass.
+1. **Resume a session.** Viewing works; continuing a past chat does not. goose
+   advertises `loadSession: true`, so it is the better prototype target for the
+   `session/load` route.
+2. Real pickers (backend switching) → the `optional-basics` capability pass.
+3. **Packaging**: sidecar-bundle the core so the window is a program, not a dev
+   run against the repo.
 
-(Done since the last handoff: the origin guard, and the goose backend.)
+(Done since the last handoff: the origin guard, the goose backend, and Tauri
+spawning the core with the window open.)
 
 To check capability instead of reading: run the `optional-basics` skill as a benchmark
 and report per recipe — **built** / **partial** / **blocked**, naming the missing host

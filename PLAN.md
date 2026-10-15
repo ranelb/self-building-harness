@@ -944,3 +944,42 @@ goose stores sessions in SQLite (`~/.local/share/goose/sessions/sessions.db`), w
 the file reader cannot see, so the sidebar is pi's list under a goose backend. Both
 are recorded in `HANDOFF.md`. The neutral session fix is ACP `session/list`, which
 goose advertises.
+
+## Tauri spawns the core; the window opens (2026-10-15)
+
+The last item standing between "project" and "program" (Tier 1). The shell was the
+untouched scaffold; the window had never opened and no core had ever been spawned
+by it.
+
+**Lifecycle.** `setup()` spawns `node --experimental-strip-types core/index.ts`
+with `SBH_PORT=0`, reads the `ws://127.0.0.1:<port>/ws` line off its stdout, and
+injects that URL into the webview with `initialization_script` (runs before the
+page's own scripts, so `App` reads it at module load instead of racing an `eval`).
+The window is created in Rust — the only way to pass an init script — so the config
+`windows` array is now empty. On `RunEvent::Exit` the core is stopped with SIGTERM,
+not SIGKILL: the core's handler closes the ACP connection and the agent dies with
+it, instead of an orphan holding a shell.
+
+**Not packaged.** The core is resolved by path from the repo (`CARGO_MANIFEST_DIR/..`
+or `SBH_ROOT`); a bundled build ships it as a sidecar resource. Deferred.
+
+**Verified in the real window** (Wayland session, screenshot): window opens, the
+webview connects to the spawned core over loopback (the origin guard admits the dev
+origin), and a streamed fake turn renders in the transcript. Closing the window
+reaps the core.
+
+**WebKitGTK is not Chromium — two findings.**
+
+1. `applyLayout` set only `min-width:0` on growing flex items. Under WebKit's
+   automatic minimum size the 50-entry session list stretched the root row to 1575px
+   inside a 974px parent, so the composer landed at y=1548 — off-screen. Setting
+   `min-height:0` too fixes it. Chromium had silently absorbed it, which is exactly
+   why the handoff said "WebKitGTK is where a surprise lives".
+2. A screenshot showed the wallpaper through the window. Not a bug: Hyprland's
+   `inactive_opacity = 0.9` plus blur on an unfocused window. Focused, the app is
+   opaque. Worth writing down so the next agent does not chase it.
+
+Diagnosis method, since it will recur: inject a throwaway script into `index.html`
+(served by Vite, no Rust rebuild) that prints `getBoundingClientRect` for every
+`[data-atom]` into a fixed overlay, then screenshot. The DOM numbers named the bug
+in one pass after two wrong guesses about transparency.

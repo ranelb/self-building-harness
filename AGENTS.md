@@ -72,6 +72,9 @@ path gets a fake-agent scenario, not a mocked function.
 **Do not trust the unit suite alone for UI changes.** The input-focus and
 fixture-path bugs both passed 49 unit tests and were only visible in a browser.
 
+**A plain `&` background process dies with the invoking shell** — hence the
+transient systemd units below.
+
 ```bash
 systemd-run --user --unit=sbh-core --collect \
   --working-directory=/home/ran/Projects/code/SBH \
@@ -90,8 +93,31 @@ Then load `http://127.0.0.1:5199/`, type, press Send, and confirm the transcript
 and the permission card. `SBH_BACKEND=fake:permission` exercises the gate.
 `systemctl --user stop sbh-core sbh-vite` when done.
 
-A plain `&` background process dies with the invoking shell — hence the systemd
-units. For the Tauri window: `npx tauri dev` (first `cargo` build is ~45 s).
+### Verifying in Tauri (the real window)
+
+The shell spawns its own core, so do not start one first. `npx tauri dev` runs
+Vite at `http://localhost:5173` (the `devUrl`) and the window connects to the core
+it spawned. On this box an agent shell has no display env, so pass it:
+
+```bash
+systemd-run --user --unit=sbh-window --collect \
+  --working-directory=/home/ran/Projects/code/SBH \
+  --setenv=WAYLAND_DISPLAY=wayland-1 \
+  --setenv=XDG_RUNTIME_DIR=/run/user/1000 \
+  --setenv=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus \
+  --setenv=XDG_SESSION_TYPE=wayland --setenv=GDK_BACKEND=wayland \
+  --setenv=WEBKIT_DISABLE_DMABUF_RENDERER=1 \
+  --setenv=WEBKIT_DISABLE_COMPOSITING_MODE=1 \
+  --setenv=SBH_BACKEND=fake:happy --setenv=SBH_ROOT=/home/ran/Projects/code/SBH \
+  /home/ran/Projects/code/SBH/src-tauri/target/debug/app
+```
+
+It needs Vite at 5173 first (`npx vite --port 5173 --strictPort`). Screenshot with
+`WAYLAND_DISPLAY=wayland-1 grim /tmp/sbh.png`. Focus the window before trusting a
+screenshot: Hyprland's `inactive_opacity = 0.9` plus blur makes an unfocused window
+look transparent, which is not an app bug. The core is a child of the shell — close
+the window (not just `systemctl stop`) to watch the lifecycle, or it is reaped by
+the cgroup and the proof is worthless.
 
 ## Writing a component
 
