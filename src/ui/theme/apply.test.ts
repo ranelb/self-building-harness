@@ -26,7 +26,7 @@ describe('applyTheme', () => {
 
 describe('loadTheme', () => {
   it('reads and merges the theme from the core', async () => {
-    const theme = await loadTheme('http://core', async () =>
+    const theme = await loadTheme('http://core', undefined, async () =>
       jsonResponse({ name: 'custom-theme', color: { accent: '#ff00aa' } })
     )
     expect(theme.name).toBe('custom-theme')
@@ -35,14 +35,14 @@ describe('loadTheme', () => {
   })
 
   it('falls back to the default when the core is unreachable', async () => {
-    const theme = await loadTheme('http://core', async () => {
+    const theme = await loadTheme('http://core', undefined, async () => {
       throw new Error('connection refused')
     })
     expect(theme.name).toBe(DEFAULT_THEME.name)
   })
 
   it('falls back on an error status or junk body', async () => {
-    expect((await loadTheme('http://core', async () => jsonResponse({}, 500))).name).toBe(DEFAULT_THEME.name)
-    expect((await loadTheme('http://core', async () => jsonResponse('nonsense'))).name).toBe(DEFAULT_THEME.name)
+    expect((await loadTheme('http://core', undefined, async () => jsonResponse({}, 500))).name).toBe(DEFAULT_THEME.name)
+    expect((await loadTheme('http://core', undefined, async () => jsonResponse('nonsense'))).name).toBe(DEFAULT_THEME.name)
   })
 })

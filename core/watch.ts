@@ -14,7 +14,8 @@ export interface Watcher {
 export function watchPaths(
   paths: string[],
   onChange: (changedPath: string) => void,
-  debounceMs = 150
+  debounceMs = 150,
+  recursive = false
 ): Watcher {
   const watchers: Array<{ close(): void }> = []
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -22,7 +23,7 @@ export function watchPaths(
   for (const path of paths) {
     try {
       watchers.push(
-        watch(path, (_event, filename) => {
+        watch(path, { recursive }, (_event, filename) => {
           const key = filename === null ? path : String(filename)
           const existing = timers.get(key)
           if (existing) clearTimeout(existing)

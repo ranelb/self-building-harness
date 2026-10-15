@@ -22,6 +22,8 @@ A declarative tree is the interface. Nothing is hardcoded in the renderer:
   built-in and it replaces it.
 - **Theme** — `~/.config/sbh/theme.json`, a partial override of design tokens.
   Every built-in reads `var(--sbh-…)`, so one file restyles the app.
+- **Surfaces** — a profile per client (`~/.config/sbh/profiles/<name>/`). A phone
+  is authored as its own layout, not a squeezed desktop one.
 - **Versioned** — the config dir is a git repo; every settled change is a commit,
   and the app can revert the last one.
 

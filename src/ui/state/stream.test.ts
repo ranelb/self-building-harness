@@ -35,7 +35,8 @@ describe('connectStream', () => {
     await waitFor(() => events.length > 0 && received.length > 0)
 
     expect(events[0]).toEqual({ type: 'chunk', text: 'hi' })
-    expect(received[0]).toEqual({ type: 'prompt', text: 'yo' })
+    expect(received[0]).toEqual({ type: 'client.hello', profile: 'desktop' })
+    expect(received).toContainEqual({ type: 'prompt', text: 'yo' })
 
     stream.close()
     await new Promise<void>((resolve) => wss.close(() => resolve()))

@@ -9,7 +9,14 @@ import { join, resolve } from 'node:path'
 import { WebSocketServer, WebSocket } from 'ws'
 import { connectAcp, type AcpConnection, type AcpSessionInfo } from './acp/client.ts'
 import { BACKEND_IDS, resolveBackend } from './backends/registry.ts'
-import { ensureComponentsDir, listComponents, readComponent } from './components.ts'
+import { ensureComponentsDir } from './components.ts'
+import {
+  isProfileName,
+  listProfileComponents,
+  profileComponentsDir,
+  profilesDir,
+  readProfileComponent,
+} from './profile.ts'
 import { ensureLayoutFile, readLayout } from './layout.ts'
 import { listSessions, readSession, type SessionSummary } from './sessions.ts'
 import { ensureThemeFile, readTheme } from './theme.ts'
@@ -94,8 +101,11 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
   await ensureThemeFile(configDir)
   await ensureLayoutFile(configDir)
   await ensureRepo(configDir)
+  await ensureComponentsDir(profilesDir(configDir))
 
   const clients = new Set<WebSocket>()
+  /** Which surface each socket declared, for scoped hot-reload. */
+  const clientProfiles = new Map<WebSocket, string>()
   let conn: AcpConnection | null = null
   /** Set when the next connection should resume a session rather than create one. */
   let resumeTarget: { sessionId: string; cwd: string } | null = null
@@ -111,6 +121,19 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
   const sendToAll = (message: unknown) => {
     const payload = JSON.stringify(message)
     for (const client of clients) {
+      if (client.readyState === WebSocket.OPEN) client.send(payload)
+    }
+  }
+
+  /**
+   * Scope a hot-reload. A base change affects every surface, so it goes to all; a
+   * profile change goes only to clients that declared it, so editing the phone
+   * layout does not churn the desktop window.
+   */
+  const invalidate = (what: 'components' | 'theme' | 'layout', profile?: string) => {
+    const payload = JSON.stringify({ type: 'invalidate', what, ...(profile ? { profile } : {}) })
+    for (const client of clients) {
+      if (profile && clientProfiles.get(client) !== profile) continue
       if (client.readyState === WebSocket.OPEN) client.send(payload)
     }
   }
@@ -289,9 +312,13 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
   }
 
   const http = createServer((req, res) => {
-    // The client appends a cache-buster to module URLs, so the path must be read
-    // before the query.
-    const url = (req.url ?? '').split('?')[0] ?? ''
+    // The client appends a cache-buster to module URLs, so parse the query rather
+    // than splitting it off. `profile` selects the surface (see core/profile.ts).
+    const requestUrl = new URL(req.url ?? '/', 'http://127.0.0.1')
+    const url = requestUrl.pathname
+    const requested = requestUrl.searchParams.get('profile')
+    const profile = isProfileName(requested) ? requested : undefined
+    const profileDir = profile ? profileComponentsDir(configDir, profile) : null
 
     // The origin guard runs before routing: a browser that sends an Origin we do
     // not trust is refused everything, reads included. A request with no Origin
@@ -313,7 +340,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     }
 
     if (req.method === 'GET' && url === '/theme') {
-      void readTheme(configDir).then((theme) => {
+      void readTheme(configDir, profile).then((theme) => {
         res.writeHead(200, { 'content-type': 'application/json' })
         res.end(JSON.stringify(theme))
       })
@@ -324,7 +351,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     // from a different origin (Vite in dev, tauri:// in the app); the listener is
     // loopback-only.
     if (req.method === 'GET' && url === '/components') {
-      void listComponents(componentsDir).then((components) => {
+      void listProfileComponents(componentsDir, profileDir).then((components) => {
         res.writeHead(200, { 'content-type': 'application/json' })
         res.end(JSON.stringify({ components }))
       })
@@ -333,7 +360,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
 
     const match = /^\/components\/([A-Za-z0-9_-]+)\.js$/.exec(url)
     if (req.method === 'GET' && match) {
-      void readComponent(componentsDir, match[1] as string).then((source) => {
+      void readProfileComponent(componentsDir, match[1] as string, profileDir).then((source) => {
         if (source === null) {
           res.writeHead(404)
           res.end()
@@ -349,7 +376,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     }
 
     if (req.method === 'GET' && url === '/layout') {
-      void readLayout(configDir).then((layout) => {
+      void readLayout(configDir, profile).then((layout) => {
         res.writeHead(200, { 'content-type': 'application/json' })
         res.end(JSON.stringify(layout))
       })
@@ -446,6 +473,11 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
         return
       }
 
+      if (msg.type === 'client.hello' && isProfileName(msg.profile)) {
+        clientProfiles.set(socket, msg.profile)
+        return
+      }
+
       if (msg.type === 'prompt' && typeof msg.text === 'string') {
         if (!msg.text.trim()) return
         void ensureConnection().prompt(msg.text)
@@ -483,7 +515,10 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
       }
     })
 
-    socket.on('close', () => clients.delete(socket))
+    socket.on('close', () => {
+      clients.delete(socket)
+      clientProfiles.delete(socket)
+    })
   })
 
   await new Promise<void>((resolve, reject) => {
@@ -495,24 +530,46 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
   // client keeps ownership of import/validation/registration. Each settled change
   // is committed first, so "revert what the agent just did" has a target.
   const componentWatcher = watchPaths([componentsDir], (changed) => {
-    void snapshot(configDir, `sbh: component ${changed}`).then(() =>
-      sendToAll({ type: 'invalidate', what: 'components' })
-    )
+    void snapshot(configDir, `sbh: component ${changed}`).then(() => invalidate('components'))
   })
-  const configWatcher = watchPaths([configDir], (changed) => {
-    // `.git` lives inside the watched directory, and committing writes there:
-    // without this filter the watcher retriggers on its own snapshots.
-    if (changed.startsWith('.git')) return
-    if (changed === 'theme.json' || changed === configDir) {
-      void snapshot(configDir, 'sbh: theme changed').then(() =>
-        sendToAll({ type: 'invalidate', what: 'theme' })
-      )
-    } else if (changed === 'layout.json') {
-      void snapshot(configDir, 'sbh: layout changed').then(() =>
-        sendToAll({ type: 'invalidate', what: 'layout' })
-      )
+
+  /** Which surface (and what kind) a changed config path belongs to. */
+  const classifyChange = (
+    changed: string
+  ): { what: 'components' | 'theme' | 'layout'; profile?: string } | null => {
+    const parts = changed.split(/[\\/]/)
+    if (parts[0] === 'profiles' && parts[1] && isProfileName(parts[1])) {
+      const rest = parts.slice(2).join('/')
+      const profile = parts[1]
+      if (rest.endsWith('layout.json')) return { what: 'layout', profile }
+      if (rest.endsWith('theme.json')) return { what: 'theme', profile }
+      return { what: 'components', profile }
     }
-  })
+    // Base components are the component watcher's job; anything else here is layout
+    // or theme. A profile directory may not exist yet when the watcher starts.
+    if (parts[0] === 'components') return null
+    if (changed.endsWith('layout.json')) return { what: 'layout' }
+    if (changed.endsWith('theme.json')) return { what: 'theme' }
+    return null
+  }
+
+  // Recursive: profiles live in subdirectories, and a layout edit inside one must
+  // reload only that surface.
+  const configWatcher = watchPaths(
+    [configDir],
+    (changed) => {
+      // `.git` lives inside the watched directory, and committing writes there:
+      // without this filter the watcher retriggers on its own snapshots.
+      if (changed.startsWith('.git')) return
+      const change = classifyChange(changed)
+      if (!change) return
+      void snapshot(configDir, `sbh: ${change.what} changed`).then(() =>
+        invalidate(change.what, change.profile)
+      )
+    },
+    150,
+    true
+  )
 
   // Machine samples ride the same state channel as everything else, so a component
   // can render the CPU without any protocol or core change per widget. Skipped when

@@ -1,0 +1,11 @@
+{
+  "type": "column",
+  "props": { "grow": true },
+  "children": [
+    { "type": "notices" },
+    { "type": "row", "children": [{ "type": "harnessPicker" }, { "type": "modelPicker" }] },
+    { "type": "transcript", "props": { "grow": true } },
+    { "type": "permission" },
+    { "type": "composer" }
+  ]
+}

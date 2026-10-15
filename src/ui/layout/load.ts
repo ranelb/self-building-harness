@@ -7,9 +7,13 @@
 import { DEFAULT_LAYOUT } from '../../../shared/layout.ts'
 import { isValidLayout, type UiNode } from '../../../shared/ui.ts'
 
-export async function loadLayout(baseUrl: string, fetchImpl: typeof fetch = fetch): Promise<UiNode> {
+export async function loadLayout(
+  baseUrl: string,
+  profile = 'desktop',
+  fetchImpl: typeof fetch = fetch
+): Promise<UiNode> {
   try {
-    const response = await fetchImpl(`${baseUrl}/layout`)
+    const response = await fetchImpl(`${baseUrl}/layout?profile=${encodeURIComponent(profile)}`)
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const parsed: unknown = await response.json()
     return isValidLayout(parsed) ? parsed : DEFAULT_LAYOUT

@@ -101,8 +101,21 @@ This is consent and blast-radius, not a sandbox; the limits are stated in the de
 doc.
 
 ### The core ships as a standalone binary
-
 The core is compiled with `bun build --compile`, so the target needs no Node
 runtime. The shell resolves it from the resource directory and falls back to Node
 plus the repo script only in development. The Arch package installs the whole thing
 root-owned, which is also what gives the capability manifest its meaning.
+
+### Surfaces: one core, a profile per client
+
+A phone is not a narrow desktop. A layout authored for a wide screen is wrong on a
+phone however the components adapt, and asking an agent to author one tree that is
+good on both asks it to fail at both. So the interface is selected per client: the
+base config directory is the default surface, and `profiles/<name>/` overrides its
+layout, theme and components. The client declares its surface (`client.hello`), the
+core layers base ← profile and serves it, and hot-reload is scoped so editing the
+phone layout does not churn the desktop.
+
+This generalizes the thesis rather than adding a special case: the agent authors an
+interface **per surface**. A phone surface can be authored by the agent or pinned to
+something hand-tuned; the mechanism is the same either way.

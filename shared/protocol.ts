@@ -63,6 +63,11 @@ export type ClientToCore =
   | { type: 'model'; id: string }
   /** Load an existing session; the agent replays it as events. */
   | { type: 'session.resume'; id: string; cwd: string }
+  /**
+   * Declare which UI surface this client is. One core serves several: a desktop
+   * and a phone author different layouts and must not inherit each other's.
+   */
+  | { type: 'client.hello'; profile: string }
 
 /** Core -> client. */
 export type CoreToClient =
@@ -73,4 +78,4 @@ export type CoreToClient =
    */
   | { type: 'state'; key: string; value: unknown }
   /** A watched file changed; the client should re-fetch. Hot reload. */
-  | { type: 'invalidate'; what: 'components' | 'theme' | 'layout' }
+  | { type: 'invalidate'; what: 'components' | 'theme' | 'layout'; profile?: string }

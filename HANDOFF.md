@@ -45,6 +45,10 @@ manifest. The capability manifest was exercised end to end: a granted tool call 
 with no card, a denied one was refused, the turn continued, and the decision landed
 in the audit log.
 
+**Verified: surfaces.** The core serves a layout, theme and component set per
+client-declared profile. A phone profile renders a different tree (a column, no
+sidebar) with no code change, and a profile edit hot-reloads only that surface.
+
 **Never verified:** a non-Arch install of the *package* (the `.deb` builds but is
 not installed anywhere), an upgrade path, and any mobile client — the remaining
 piece.
@@ -54,9 +58,12 @@ piece.
 ### Mobile
 
 The next piece, and the reason the core is loopback-first: a phone client is
-another WebSocket consumer of the same protocol, not a rewrite. Open questions are
-transport off-device (the loopback core has no remote story yet), and pairing/auth,
-which should not be able to widen the capability boundary from a phone.
+another WebSocket consumer of the same protocol, not a rewrite. **Profiles
+(surfaces) are already in place** — the core serves a layout, theme and component
+set per client-declared profile — so a phone is a second *layout* to author, not a
+fork. What remains is transport off-device (the loopback core has no remote story
+yet), and pairing/auth, which must not be able to widen the capability boundary
+from a phone.
 
 ### Daily-driver quality
 

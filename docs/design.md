@@ -122,8 +122,20 @@ Both, and `components/`, live in a **git repo** (`~/.config/sbh`) that the core
 commits to on every settled change. A failed load offers *Revert last change*,
 which is itself a commit, so the undo can be undone.
 
-## Backends, sessions, resume — ACP-native
+## Surfaces: a profile per client
 
+One core serves several interfaces, and a desktop window and a phone are different
+trees rather than one responsive tree. The config is therefore layered: the base
+directory is the default surface, and `profiles/<name>/` overrides its layout, theme
+and components. A client declares which surface it is, the core serves that profile,
+and hot-reload invalidations are scoped to it, so editing the phone layout does not
+churn the desktop.
+
+The agent authors an interface *per surface*. That is the thesis at one more level
+— the UI is authored, not merely themed, and a phone is a second deliberate
+interface rather than a squeezed desktop one.
+
+## Backends, sessions, resume — ACP-native
 A backend is a registry entry: a command and arguments. `pi` (`pi-acp`) and `goose`
 (`goose acp`) are wired and verified. Nothing in the host is privileged per harness.
 

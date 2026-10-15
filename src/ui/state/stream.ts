@@ -18,7 +18,7 @@ export interface Stream {
 
 const MAX_BACKOFF_MS = 10_000
 
-export function connectStream(url: string): Stream {
+export function connectStream(url: string, profile = 'desktop'): Stream {
   const listeners: ((event: UiEvent) => void)[] = []
   const invalidators: ((what: 'components' | 'theme' | 'layout') => void)[] = []
   const stateListeners: ((key: string, value: unknown) => void)[] = []
@@ -35,6 +35,9 @@ export function connectStream(url: string): Stream {
 
     ws.onopen = () => {
       attempt = 0
+      // Declare the surface before anything else, so hot-reload scoping is right
+      // from the first change, and re-declared on every reconnect.
+      ws.send(JSON.stringify({ type: 'client.hello', profile }))
       while (queue.length > 0) {
         const data = queue.shift()
         if (data !== undefined) ws.send(data)

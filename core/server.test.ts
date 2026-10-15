@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { once } from 'node:events'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import WebSocket from 'ws'
@@ -281,5 +281,37 @@ describe('capability manifest', () => {
     await waitFor(() => messages.some((m) => m.event?.type === 'chunk' && m.event.text === 'after'))
     ws.close()
     await rm(paths.dir, { recursive: true, force: true })
+  })
+})
+
+describe('profiles (surfaces)', () => {
+  it('serves a layout, theme and component set per surface', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sbh-surface-'))
+    await mkdir(join(dir, 'profiles', 'phone', 'components'), { recursive: true })
+    await writeFile(join(dir, 'layout.json'), JSON.stringify({ type: 'row', children: [] }))
+    await writeFile(join(dir, 'profiles', 'phone', 'layout.json'), JSON.stringify({ type: 'column', children: [] }))
+    await mkdir(join(dir, 'components'), { recursive: true })
+    await writeFile(join(dir, 'components', 'panel.js'), 'base panel')
+    await writeFile(join(dir, 'profiles', 'phone', 'components', 'panel.js'), 'phone panel')
+    await writeFile(join(dir, 'profiles', 'phone', 'components', 'mobile.js'), 'mobile only')
+
+    core = await startCore({ port: 0, backend: 'fake:happy', configDir: dir })
+
+    const base = (await fetch(`http://127.0.0.1:${core.port}/layout`).then((r) => r.json())) as any
+    const phone = (await fetch(`http://127.0.0.1:${core.port}/layout?profile=phone`).then((r) => r.json())) as any
+    expect(base.type).toBe('row')
+    expect(phone.type).toBe('column')
+
+    const list = (await fetch(`http://127.0.0.1:${core.port}/components?profile=phone`).then((r) =>
+      r.json()
+    )) as any
+    expect(list.components).toEqual(['mobile', 'panel'])
+
+    const source = await fetch(`http://127.0.0.1:${core.port}/components/panel.js?profile=phone`).then((r) =>
+      r.text()
+    )
+    expect(source).toBe('phone panel')
+
+    await rm(dir, { recursive: true, force: true })
   })
 })

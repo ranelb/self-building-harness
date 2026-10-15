@@ -96,7 +96,7 @@ describe('loadComponents', () => {
         return { component: fakeComponent('alpha') }
       },
     })
-    expect(urls[0]).toBe('http://core/components/alpha.js?rev=rev-1')
+    expect(urls[0]).toBe('http://core/components/alpha.js?profile=desktop&rev=rev-1')
   })
 
   it('unregisters a component whose file has gone, and keeps a merely broken one', async () => {

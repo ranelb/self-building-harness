@@ -224,6 +224,33 @@ override any of them — that is how the whole interface becomes agent-authored
 rather than agent-styled. A layout that is not a tree falls back to the default, so
 a bad edit cannot leave a blank window.
 
+## Profiles (surfaces)
+
+One core serves more than one interface. A desktop window and a phone are different
+trees, not one responsive tree — a layout authored for a wide screen is wrong on a
+phone however the components adapt. So a **profile** layers over the base config:
+
+- base: `~/.config/sbh/{layout.json,theme.json,components/}` — the default surface.
+- profile: `~/.config/sbh/profiles/<name>/{layout.json,theme.json,components/}` —
+  overrides any of them for that surface.
+
+A client declares its surface with `client.hello { profile }` on the WebSocket, and
+its HTTP fetches carry `?profile=`. The core layers base ← profile and serves that:
+the profile layout if present else the base; the theme merged (base over the
+default, then the profile over that); the components unioned, with the profile's
+overriding same-named base ones. A name must be a bare word
+(`/^[A-Za-z0-9][A-Za-z0-9_-]*$/`), which is also what keeps the read path
+traversal-safe.
+
+Hot reload is scoped: a base change reaches every surface, a profile change only
+the clients that declared it, so editing the phone layout does not churn the
+desktop window.
+
+Authoring a phone surface is exactly like authoring the desktop one — write
+`profiles/phone/layout.json` and any components under `profiles/phone/components/`.
+In a checkout the Vite dev server previews it with `?profile=phone`.
+`examples/profiles/phone/layout.json` is a starting point (a column, no sidebar).
+
 ## Sessions
 
 `GET /sessions` lists past conversations from the **agent's own** `session/list`

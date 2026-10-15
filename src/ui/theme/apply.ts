@@ -19,10 +19,11 @@ export function applyTheme(target: HTMLElement, theme: Theme): Record<string, st
 /** Read the theme from the core. A failure falls back to the default, never throws. */
 export async function loadTheme(
   baseUrl: string,
+  profile = 'desktop',
   fetchImpl: typeof fetch = fetch
 ): Promise<Theme> {
   try {
-    const response = await fetchImpl(`${baseUrl}/theme`)
+    const response = await fetchImpl(`${baseUrl}/theme?profile=${encodeURIComponent(profile)}`)
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     return mergeTheme(DEFAULT_THEME, await response.json())
   } catch {

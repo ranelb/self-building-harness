@@ -22,6 +22,8 @@ export interface LoadReport {
 export interface LoadOptions {
   /** Core HTTP base, e.g. `http://127.0.0.1:8787`. */
   baseUrl: string
+  /** Which UI surface to load components for. Defaults to the base profile. */
+  profile?: string
   fetchImpl?: typeof fetch
   importImpl?: (url: string) => Promise<unknown>
   /**
@@ -65,10 +67,11 @@ export async function loadComponents(options: LoadOptions): Promise<LoadReport> 
 
   const report: LoadReport = { loaded: [], failed: [], removed: [] }
   const revision = options.revision ?? String(Date.now())
+  const profile = encodeURIComponent(options.profile ?? 'desktop')
 
   let names: string[] = []
   try {
-    const response = await doFetch(`${options.baseUrl}/components`)
+    const response = await doFetch(`${options.baseUrl}/components?profile=${profile}`)
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const body = (await response.json()) as { components?: unknown }
     names = Array.isArray(body?.components)
@@ -82,7 +85,7 @@ export async function loadComponents(options: LoadOptions): Promise<LoadReport> 
   for (const name of names) {
     try {
       const module = (await doImport(
-        `${options.baseUrl}/components/${name}.js?rev=${revision}`
+        `${options.baseUrl}/components/${name}.js?profile=${profile}&rev=${revision}`
       )) as {
         component?: unknown
         default?: unknown

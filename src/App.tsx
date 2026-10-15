@@ -20,6 +20,16 @@ const DEFAULT_CORE_URL =
   import.meta.env.VITE_CORE_URL ??
   'ws://127.0.0.1:8787/ws'
 
+/**
+ * Which UI surface this client is. The core serves a layout, theme and component
+ * set per profile, so a phone does not inherit a desktop tree. Override with
+ * `?profile=` (browser dev) or an injected `window.__SBH_PROFILE__` (a shell).
+ */
+const PROFILE =
+  (typeof location !== 'undefined' ? new URLSearchParams(location.search).get('profile') : null) ??
+  (globalThis as { __SBH_PROFILE__?: string }).__SBH_PROFILE__ ??
+  'desktop'
+
 /** Read a `{ value, options }` picker out of the state channel, or fall back. */
 const asPicker = (
   value: unknown,
@@ -57,13 +67,13 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
   // reload and first paint go down exactly the same path.
   useEffect(() => {
     const baseUrl = httpBaseFromWsUrl(coreUrl)
-    const connection = connectStream(coreUrl)
+    const connection = connectStream(coreUrl, PROFILE)
     stream.current = connection
     let cancelled = false
 
     const refreshComponents = () => {
       if (!baseUrl) return
-      void loadComponents({ baseUrl }).then((report) => {
+      void loadComponents({ baseUrl, profile: PROFILE }).then((report) => {
         if (!cancelled) setComponents(report)
       })
     }
@@ -72,14 +82,14 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
       if (!baseUrl) return
       // Variables live on the document root, so everything — including the body
       // background — follows a theme change with no re-render.
-      void loadTheme(baseUrl).then((theme) => {
+      void loadTheme(baseUrl, PROFILE).then((theme) => {
         if (!cancelled) setTokens(applyTheme(document.documentElement, theme))
       })
     }
 
     const refreshLayout = () => {
       if (!baseUrl) return
-      void loadLayout(baseUrl).then((next) => {
+      void loadLayout(baseUrl, PROFILE).then((next) => {
         if (!cancelled) setLayout(next)
       })
     }
