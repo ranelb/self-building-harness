@@ -1034,3 +1034,21 @@ Bugs found by running it, again not the suite:
   session, so the core now opens one on client connect.
 - a resume created the connection but never triggered the load; `open()` is now an
   explicit step (the fake test caught it only because it asserted the replayed text).
+
+## Capability model: the permission card is not the boundary (2026-10-15)
+
+Settled with ran, recorded in the vault:
+`specs/2026-10-15-capability-manifest-design.md`.
+
+The correction that mattered: I proposed showing the command/path verbatim in a
+native card. ran rejected it — paternalistic. The card is the agent's and may lie;
+that is the user's call. What survives is the only non-delegable thing: **a safety
+toggle the agent enforces is not a toggle.** So authority stays in the core, off by
+default, root-owned when on; presentation is fully agent-authored.
+
+1. **Presentation slice — done.** `normalizePermissionRequest` carries `kind`,
+   `name`, `rawInput`, `toolCallId`; the default card shows kind + raw input and is
+   overridable. Verified with `fake:permission` in Chromium.
+2. **Enforcement — next.** Manifest loader (root path, dev fallback), classification,
+   policy, audit log, the default-off switch.
+3. **Switch UX — after.** A Hub/Ryoku page that toggles and edits grants via pkexec.

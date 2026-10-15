@@ -9,9 +9,10 @@ tree of components, driven by agent backends over ACP. The agent authors the UI;
 the host owns the plumbing and the trust boundary.
 
 **The design is settled and lives in the vault:**
-`~/.local/share/ryoku/rashin/specs/2026-10-12-meta-harness-design.md`. Read it
-before proposing a design change. Do not copy it into this repo — one source of
-truth, N consumers.
+`~/.local/share/ryoku/rashin/specs/2026-10-12-meta-harness-design.md`, and for the
+capability model, `~/.local/share/ryoku/rashin/specs/2026-10-15-capability-manifest-design.md`.
+Read them before proposing a design change. Do not copy them into this repo — one
+source of truth, N consumers.
 
 **Implementing M1:** read `PLAN.md` and work the tasks in order with the
 `executing-plans` skill.

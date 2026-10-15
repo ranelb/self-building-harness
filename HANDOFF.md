@@ -102,9 +102,11 @@ system-wide, and there is no rpm/AppImage pass or an update story.
   agent-visible, and not covered by revert.
 
 ### Designed, never built
-- **Capability manifest** — named capabilities, default-deny, policy in a root-owned
-  file, approved through the same UI as tool calls. This is the honest form of "full
-  system integration"; see `PLAN.md` for the evaluation.
+- **Capability manifest** — named capabilities, scopes, policy in a root-owned
+  file, **opt-in and off by default**. The design is settled in the vault:
+  `specs/2026-10-15-capability-manifest-design.md` (presentation vs authority; trust
+  by default). The presentation slice is built (the card receives the whole tool
+  call and is fully agent-authored); enforcement is not.
 - **`CATALOG.md`** — the design's generated inventory of components + contract in the
   UI directory, so an agent can read what exists. Does not exist.
 - **Published docs** a harness can `web_fetch`. Does not exist; `AGENTS.md` and this
