@@ -119,3 +119,17 @@ phone layout does not churn the desktop.
 This generalizes the thesis rather than adding a special case: the agent authors an
 interface **per surface**. A phone surface can be authored by the agent or pinned to
 something hand-tuned; the mechanism is the same either way.
+
+### The phone is a companion server, not a second core
+
+A phone cannot reach a loopback core and the core cannot serve the app's static
+bundle, so a small **companion server** does both: it serves the built client and
+reverse-proxies the core's HTTP and WebSocket to it. The core stays loopback, the
+invariant holds, and the phone is just another client with the `phone` surface.
+
+It binds loopback and names no transport — front it with TLS (`tailscale serve`)
+so the phone gets a secure context. It has no endpoints beyond static files and
+the proxy, which is what keeps a trusted phone from meaning a phone that can widen
+the capability boundary. (And the alternative — putting the core itself on the
+tailnet — would expose the process that spawns agents and answers permissions, and
+still wouldn't serve the client bundle.)

@@ -302,3 +302,25 @@ sudo sbh-policy enable
 
 `--file` (or `SBH_MANIFEST`) points it elsewhere for development. Hand-editing works
 too — the CLI is a convenience, not the only path.
+
+## The phone server
+
+A companion process, not the core. `npm run phone` (`core/phone-server.ts`) serves
+the built client (`npm run build:phone` → `dist-phone/`) and reverse-proxies the
+core's HTTP routes and `/ws` to it, injecting `__SBH_PROFILE__` (default `phone`)
+and a same-origin `__SBH_CORE_URL__` into `index.html`. One origin, so the phone
+has no CORS story.
+
+- It **binds loopback by default**. It names no transport; front it with TLS
+  (e.g. `tailscale serve`) so the browser gets a secure context — a PWA needs one.
+- It **strips the `Origin` header** on the proxy hop, so the core's origin guard
+  sees a plain server-to-server request and needs no allowlist entry.
+- It has **no endpoints of its own** beyond static files and the proxy. That is
+  what keeps "trust the phone" from becoming "the phone can grant": there is
+  nothing to grant, and the manifest is edited by `sbh-policy`, not over HTTP.
+- The core must be reachable: run it on a fixed port (`SBH_PORT=8787`), or pin the
+  desktop app's core with an ambient `SBH_PORT` (the shell passes it through now).
+
+Env: `SBH_CORE_URL` (default `ws://127.0.0.1:8787/ws`), `SBH_PHONE_PORT` (8788),
+`SBH_PHONE_HOST` (loopback), `SBH_PHONE_DIST` (`dist-phone`), `SBH_PHONE_PROFILE`
+(`phone`).

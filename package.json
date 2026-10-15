@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build && npm run build:core",
     "build:core": "mkdir -p src-tauri/binaries && bun build --compile --target=bun-linux-x64 core/index.ts --outfile src-tauri/binaries/sbh-core",
+    "build:phone": "vite build --outDir dist-phone --emptyOutDir",
+    "phone": "node --experimental-strip-types core/phone-server.ts",
     "preview": "vite preview",
     "test": "vitest run",
     "core": "node --experimental-strip-types core/index.ts",

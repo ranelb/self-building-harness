@@ -60,11 +60,26 @@ A `.deb` also builds (`npx tauri build --bundles deb`).
 npm run core      # the core alone, on ws://127.0.0.1:<port>/ws
 npx tauri dev     # the window; it spawns its own core
 npm test          # the suite: no network, no model
-npm run policy -- list   # inspect the capability manifest
+npm run policy -- list          # inspect the capability manifest
+npm run build:phone && npm run phone   # serve the phone client (proxies a loopback core)
 ```
 
 Environment: `SBH_BACKEND` (`pi`, `goose`, or a `fake:` fixture), `SBH_PORT`,
-`SBH_CONFIG_DIR`, `SBH_COMPONENTS_DIR`, `SBH_ALLOWED_ORIGINS`.
+`SBH_CONFIG_DIR`, `SBH_COMPONENTS_DIR`, `SBH_ALLOWED_ORIGINS`; for the phone server,
+`SBH_CORE_URL`, `SBH_PHONE_PORT`, `SBH_PHONE_HOST`, `SBH_PHONE_DIST`.
+
+## Phone / remote
+
+The core is loopback-only, and a phone can't reach loopback — nor can the core
+serve the app's static bundle. So `npm run phone` runs a small **companion server**
+that does two things: serve the built phone client, and reverse-proxy the core's
+HTTP and WebSocket to it. One origin, so the phone has no CORS story at all.
+
+It binds loopback by default; front it with something that terminates TLS (for
+example `tailscale serve`) and the client gets a **secure context**, which a PWA
+needs. **SBH names no transport** — Tailscale, a reverse proxy, an ssh tunnel are
+all the same to it. It has no endpoints beyond static files and the proxy, so it
+cannot widen the capability boundary.
 
 ## Trust model
 

@@ -200,7 +200,9 @@ disabled root manifest at system paths; a `.deb` builds for Debian-family.
 ## Not in scope (decided, not forgotten)
 
 - **Mobile** — the next piece, and the reason the core is loopback-first. It is a
-  client, not a rewrite.
+  client, not a rewrite: a phone surface (profile) plus a companion server that
+  serves the built client and proxies the loopback core. The client names no
+  transport; TLS is the operator's, via whatever fronts the companion.
 - **MCP Apps hosting** — a ratified MCP extension; deferred, not rejected.
 - **Published docs / catalog** — a generated component inventory (`CATALOG.md`)
   and web-fetchable docs so any harness can bootstrap itself. Open.

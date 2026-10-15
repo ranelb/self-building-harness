@@ -45,9 +45,11 @@ manifest. The capability manifest was exercised end to end: a granted tool call 
 with no card, a denied one was refused, the turn continued, and the decision landed
 in the audit log.
 
-**Verified: surfaces.** The core serves a layout, theme and component set per
-client-declared profile. A phone profile renders a different tree (a column, no
-sidebar) with no code change, and a profile edit hot-reloads only that surface.
+**Verified: surfaces and the phone server.** The core serves a layout, theme and
+component set per client-declared profile, and a profile edit hot-reloads only that
+surface. The companion phone server serves the built client and reverse-proxies a
+loopback core over HTTP and WebSocket; loading it as a phone (390×780) rendered the
+phone layout with no sidebar, and a prompt round-tripped through the proxy.
 
 **Never verified:** a non-Arch install of the *package* (the `.deb` builds but is
 not installed anywhere), an upgrade path, and any mobile client — the remaining
@@ -57,13 +59,14 @@ piece.
 
 ### Mobile
 
-The next piece, and the reason the core is loopback-first: a phone client is
-another WebSocket consumer of the same protocol, not a rewrite. **Profiles
-(surfaces) are already in place** — the core serves a layout, theme and component
-set per client-declared profile — so a phone is a second *layout* to author, not a
-fork. What remains is transport off-device (the loopback core has no remote story
-yet), and pairing/auth, which must not be able to widen the capability boundary
-from a phone.
+Profiles (surfaces) and a companion phone server are in place: the core serves a
+layout/theme/component set per client-declared surface, and `npm run phone` serves
+the built client while reverse-proxying the loopback core. So the phone is a
+second *layout* and a proxy, not a fork. What remains is using it off-device —
+running the companion and fronting it with TLS — and deciding pairing. There is
+none today: the phone server has no auth, so it relies on the network (a tailnet,
+an ssh tunnel) for access control. That is a deliberate default, but it should be
+a documented one.
 
 ### Daily-driver quality
 
