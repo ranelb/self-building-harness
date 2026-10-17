@@ -119,6 +119,8 @@ export interface HostState {
   draftAttachments: Attachment[]
   /** `!` results that will ride the next prompt; shown as removable chips. */
   pendingContext: ContextEntry[]
+  /** The event schema the core speaks; a component checks its `handledEvents` against `kinds`. */
+  schema: { version: number; kinds: string[] }
   /** What the agent reported it can do (image, fork, …). */
   capabilities: AgentCapabilities
   status: 'idle' | 'streaming' | 'error'

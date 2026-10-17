@@ -36,6 +36,14 @@ const PROFILE =
   (globalThis as { __SBH_PROFILE__?: string }).__SBH_PROFILE__ ??
   'desktop'
 
+/** The core's event schema; until it arrives the client knows nothing (version 0). */
+const asSchema = (value: unknown): { version: number; kinds: string[] } => {
+  if (typeof value !== 'object' || value === null) return { version: 0, kinds: [] }
+  const candidate = value as { version?: unknown; kinds?: unknown }
+  const kinds = Array.isArray(candidate.kinds) ? candidate.kinds.filter((k): k is string => typeof k === 'string') : []
+  return { version: typeof candidate.version === 'number' ? candidate.version : 0, kinds }
+}
+
 /** Read a `{ value, options }` picker out of the state channel, or fall back. */
 const asPicker = (
   value: unknown,
@@ -198,6 +206,7 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
     draftAttachments: attachments,
     pendingContext: transcript.context,
     capabilities: transcript.capabilities,
+    schema: asSchema(data.schema),
     status: transcript.status,
     queued: transcript.queued,
     error: transcript.error,

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import WebSocket from 'ws'
 import { startCore, type Core } from './server.ts'
+import { EVENT_SCHEMA_VERSION } from '../shared/protocol.ts'
 import { makeTempRepo, makeTempTree, type TempRepo, type TempTree } from '../test/fixtures/files-fixture.ts'
 
 let core: Core | undefined
@@ -115,6 +116,19 @@ describe('core server', () => {
     expect(secondMessages.find((m) => m.key === 'capabilities')?.value).toMatchObject({ image: true, fork: true })
     first.close()
     second.close()
+  })
+
+  it('publishes the event schema to a connecting client', async () => {
+    core = await startCore({ port: 0, backend: 'fake:happy' })
+    const socket = new WebSocket(`ws://127.0.0.1:${core.port}/ws`)
+    const messages: any[] = []
+    socket.on('message', (data) => messages.push(JSON.parse(String(data))))
+    await once(socket, 'open')
+    await waitFor(() => messages.some((m) => m.type === 'state' && m.key === 'schema'))
+    const schema = messages.find((m) => m.key === 'schema')?.value
+    expect(schema.version).toBe(EVENT_SCHEMA_VERSION)
+    expect(schema.kinds).toEqual(expect.arrayContaining(['context', 'compaction', 'queue']))
+    socket.close()
   })
 
   it('serves the component directory', async () => {

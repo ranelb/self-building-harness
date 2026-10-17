@@ -117,6 +117,24 @@ export type UiEvent =
   | { type: 'capabilities'; image: boolean; audio: boolean; embeddedContext: boolean; fork: boolean }
   | { type: 'error'; message: string }
 
+/**
+ * The UiEvent schema version. Bump it whenever UiEvent gains or loses a kind, so a
+ * component can tell it may be looking at events it does not render.
+ */
+export const EVENT_SCHEMA_VERSION = 1
+
+/** Every `UiEvent` discriminant. Exhaustive: the type guard below fails to compile when a kind is missing. */
+export const UI_EVENT_KINDS = [
+  'chunk', 'user.chunk', 'thought', 'tool', 'attachment', 'context',
+  'permission.requested', 'usage', 'compaction', 'config', 'permission.resolved',
+  'turn.started', 'turn.finished', 'queue', 'session.reset', 'commands',
+  'capabilities', 'error',
+] as const satisfies readonly UiEvent['type'][]
+
+/** Compile-time guard: resolves to `true` only when UI_EVENT_KINDS covers the whole union. */
+type MissingEventKinds = Exclude<UiEvent['type'], (typeof UI_EVENT_KINDS)[number]>
+export const _uiEventKindsExhaustive: [MissingEventKinds] extends [never] ? true : MissingEventKinds = true
+
 /** A pending permission request as the host state carries it. */
 export type PermissionRequest = Extract<UiEvent, { type: 'permission.requested' }>
 

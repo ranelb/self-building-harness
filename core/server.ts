@@ -52,6 +52,7 @@ import { expandMentions, maxPromptContextBytes } from './mentions.ts'
 import { runShell, type ShellHandle } from './shell.ts'
 import type { AcpContentBlock } from './attachments.ts'
 import type { ContextEntry, PermissionRequest, SessionConfigOption, UiEvent } from '../shared/protocol.ts'
+import { EVENT_SCHEMA_VERSION, UI_EVENT_KINDS } from '../shared/protocol.ts'
 
 /**
  * The scripted fixture (test seam).
@@ -772,6 +773,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     if (capabilitiesState) {
       socket.send(JSON.stringify({ type: 'state', key: 'capabilities', value: capabilitiesState }))
     }
+    socket.send(JSON.stringify({ type: 'state', key: 'schema', value: { version: EVENT_SCHEMA_VERSION, kinds: UI_EVENT_KINDS } }))
     socket.send(JSON.stringify({ type: 'state', key: 'store', value: appState }))
     // The model list only arrives with a session (`session/new` carries
     // `configOptions`), so open one now. pi does not write a session file until

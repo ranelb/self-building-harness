@@ -24,6 +24,7 @@ const withMessages = (count: number): RenderContext => {
       commands: [],
       draftAttachments: [],
       capabilities: { image: false, audio: false, embeddedContext: false, fork: false },
+      schema: { version: 1, kinds: [] },
       status: 'idle',
       queued: 0,
       draft: '',
