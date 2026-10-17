@@ -209,6 +209,7 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
             key?: unknown
             attachment?: Attachment
             index?: unknown
+            steer?: unknown
           }
         | undefined
 
@@ -267,6 +268,7 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
           const text = (live?.value ?? draft).trim()
           const outgoing = attachments
           if (!text && outgoing.length === 0) return
+          const steer = props?.steer === true
           // An edit becomes a real branch only when the backend forks and the
           // edit is the last user turn; otherwise it is a resend (dimmed above).
           const editing = pendingEdit.current
@@ -280,6 +282,7 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
             type: 'prompt',
             text,
             ...(outgoing.length > 0 ? { attachments: outgoing } : {}),
+            ...(steer ? { steer: true } : {}),
           })
           if (live) live.value = ''
           setDraft('')

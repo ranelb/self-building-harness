@@ -744,7 +744,9 @@ registerComponent({
         menu!.replaceChildren()
         return
       }
-      if (key === 'Enter') live.ctx.dispatch('prompt.send')
+      // Enter queues: the reflexive key must not cancel work. Shift+Enter is the
+      // deliberate interruption; the core serialises either way.
+      if (key === 'Enter') live.ctx.dispatch('prompt.send', event.shiftKey ? { steer: true } : {})
       else if (key === 'Escape' && live.ctx.host.status === 'streaming') live.ctx.dispatch('turn.cancel')
     })
     input.addEventListener('paste', (event) => {
@@ -779,6 +781,15 @@ registerComponent({
       live.ctx.dispatch(live.ctx.host.status === 'streaming' ? 'turn.cancel' : 'prompt.send')
     })
 
+    // Mouse parity for a plain Enter while streaming: queue a follow-up.
+    const queue = document.createElement('button')
+    queue.setAttribute('data-queue', '')
+    queue.textContent = 'Queue'
+    queue.title = 'Send after this turn — Enter queues, Shift+Enter interrupts'
+    controlStyle(queue)
+    queue.style.display = 'none'
+    queue.addEventListener('click', () => getLive(el)?.ctx.dispatch('prompt.send'))
+
     // Prompts waiting behind the in-flight turn; hidden at zero.
     const queued = document.createElement('span')
     queued.setAttribute('data-queued', '')
@@ -800,7 +811,7 @@ registerComponent({
       'border:1px solid var(--sbh-color-border);border-radius:var(--sbh-radius-md);' +
       'background:var(--sbh-color-surface);padding:var(--sbh-space-xs)'
 
-    row.append(attach, input, queued, clear, send)
+    row.append(attach, input, queued, clear, queue, send)
     el.append(menu, tray, error, row, picker)
     return el
   },
@@ -816,6 +827,8 @@ registerComponent({
 
     const send = element.querySelector('button[data-send]') as HTMLButtonElement | null
     if (send) send.textContent = ctx.host.status === 'streaming' ? 'Stop' : 'Send'
+    const queue = element.querySelector('button[data-queue]') as HTMLElement | null
+    if (queue) queue.style.display = ctx.host.status === 'streaming' ? 'inline-flex' : 'none'
 
     const waiting = ctx.host.queued > 0 ? 'inline' : 'none'
     const badge = element.querySelector('span[data-queued]') as HTMLElement | null

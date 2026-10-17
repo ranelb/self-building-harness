@@ -241,13 +241,20 @@ describe('composer', () => {
   const withStatus = (status: 'idle' | 'streaming', extra: Partial<RenderContext['host']> = {}) => {
     const base = withMessages(0)
     const actions: string[] = []
+    const calls: Array<[string, unknown]> = []
     const ctx: RenderContext = {
       ...base,
       host: { ...base.host, status, ...extra },
-      dispatch: (action: string) => actions.push(action),
+      dispatch: (action: string, payload?: unknown) => {
+        actions.push(action)
+        calls.push([action, payload])
+      },
     }
-    return { el: renderTree({ type: 'composer' }, ctx) as HTMLElement, actions }
+    return { el: renderTree({ type: 'composer' }, ctx) as HTMLElement, actions, calls }
   }
+
+  const press = (input: HTMLElement, key: string, shiftKey = false) =>
+    input.dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true }))
 
   it('shows Stop and cancels while streaming', () => {
     const { el, actions } = withStatus('streaming')
@@ -255,6 +262,30 @@ describe('composer', () => {
     expect(button.textContent).toBe('Stop')
     button.click()
     expect(actions).toEqual(['turn.cancel'])
+  })
+
+  it('queues on Enter while streaming and steers on Shift+Enter', () => {
+    const { el, calls } = withStatus('streaming')
+    const input = el.querySelector('input[data-atom="input"]') as HTMLElement
+    press(input, 'Enter')
+    press(input, 'Enter', true)
+    expect(calls).toEqual([
+      ['prompt.send', {}],
+      ['prompt.send', { steer: true }],
+    ])
+  })
+
+  it('shows a Queue button only while streaming', () => {
+    const streaming = withStatus('streaming')
+    const queue = streaming.el.querySelector('button[data-queue]') as HTMLButtonElement
+    expect(queue.textContent).toBe('Queue')
+    expect(queue.title).toBe('Send after this turn — Enter queues, Shift+Enter interrupts')
+    expect(queue.style.display).not.toBe('none')
+    queue.click()
+    expect(streaming.calls).toEqual([['prompt.send', undefined]])
+
+    const idle = withStatus('idle')
+    expect((idle.el.querySelector('button[data-queue]') as HTMLElement).style.display).toBe('none')
   })
 
   it('shows the depth badge and clears the queue', () => {

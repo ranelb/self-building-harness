@@ -73,6 +73,39 @@ describe('App', () => {
     }
   })
 
+  it('puts steer on the wire', async () => {
+    const original = globalThis.WebSocket
+    ;(globalThis as { WebSocket: unknown }).WebSocket = FakeSocket
+    FakeSocket.last = undefined
+    try {
+      const host = document.createElement('div')
+      document.body.appendChild(host)
+      render(<App coreUrl="ws://127.0.0.1:9/ws" />, host)
+      await tick()
+      const socket = await waitForSocket()
+      expect(socket).toBeDefined()
+      socket?.onmessage?.({ data: JSON.stringify({ type: 'event', event: { type: 'turn.started' } }) })
+      await tick()
+      const input = host.querySelector('input[data-atom="input"]') as HTMLInputElement
+      input.value = 'hi'
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true }))
+      await tick()
+      expect(socket?.sent).toContainEqual({ type: 'prompt', text: 'hi', steer: true })
+      input.value = 'plain'
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+      await tick()
+      const plain = (socket?.sent ?? []).find(
+        (m) => (m as { text?: string }).text === 'plain'
+      ) as Record<string, unknown>
+      expect(plain).toBeDefined()
+      expect('steer' in plain).toBe(false)
+      render(null, host)
+      host.remove()
+    } finally {
+      ;(globalThis as { WebSocket: unknown }).WebSocket = original
+    }
+  })
+
   it('starts a new chat and prefills the draft when editing a prompt', async () => {
     const original = globalThis.WebSocket
     ;(globalThis as { WebSocket: unknown }).WebSocket = FakeSocket
