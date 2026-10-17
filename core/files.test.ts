@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { basename, join } from 'node:path'
-import { canonicalRoots, confine, FileAccessError } from './files.ts'
+import { canonicalRoots, confine, FileAccessError, listTree } from './files.ts'
 import { makeTempTree, type TempTree } from '../test/fixtures/files-fixture.ts'
 
 /** The reason a promise rejects with, or 'ok' if it resolves. */
@@ -88,5 +88,66 @@ describe('confine (the gate)', () => {
     const roots = await canonicalRoots([gone])
     expect(roots[0]?.real).toBeNull()
     expect(await reasonOf(confine(roots, gone, ''))).toBe('root-not-known')
+  })
+})
+
+describe('listTree', () => {
+  let tree: TempTree
+
+  beforeEach(async () => {
+    tree = await makeTempTree()
+  })
+  afterEach(async () => {
+    await tree.cleanup()
+  })
+
+  it('lists one level of the root, dotfiles included, without recursing', async () => {
+    const roots = await canonicalRoots([tree.root])
+    const got = await listTree(roots, tree.root, '')
+    const names = got.entries.map((e) => e.name)
+    expect(names).toEqual(['sub', '.hidden', 'a.txt', 'b.bin', 'link-in', 'link-out'])
+    expect(got.entries.find((e) => e.name === 'b.ts')).toBeUndefined()
+    expect(got.truncated).toBe(false)
+    expect(got.path).toBe('')
+  })
+
+  it('lists a subdirectory with root-relative paths', async () => {
+    const roots = await canonicalRoots([tree.root])
+    const got = await listTree(roots, tree.root, 'sub')
+    expect(got.entries).toEqual([
+      { name: 'b.ts', path: 'sub/b.ts', kind: 'file', size: 'export const b = 1\n'.length, outside: false },
+    ])
+  })
+
+  it('marks a symlink whose target is outside the root as outside', async () => {
+    const roots = await canonicalRoots([tree.root])
+    const got = await listTree(roots, tree.root, '')
+    const link = got.entries.find((e) => e.name === 'link-out')
+    expect(link).toMatchObject({ kind: 'symlink', outside: true })
+  })
+
+  it('marks a symlink whose target is inside the root as not outside', async () => {
+    const roots = await canonicalRoots([tree.root])
+    const got = await listTree(roots, tree.root, '')
+    const link = got.entries.find((e) => e.name === 'link-in')
+    expect(link).toMatchObject({ kind: 'symlink', outside: false })
+  })
+
+  it('refuses a file where a directory is expected', async () => {
+    const roots = await canonicalRoots([tree.root])
+    expect(await reasonOf(listTree(roots, tree.root, 'a.txt'))).toBe('not-a-dir')
+  })
+
+  it('caps the listing and reports truncation', async () => {
+    const roots = await canonicalRoots([tree.root])
+    const got = await listTree(roots, tree.root, '', 2)
+    expect(got.entries).toHaveLength(2)
+    expect(got.truncated).toBe(true)
+  })
+
+  it('lists directories before files, each group by name', async () => {
+    const roots = await canonicalRoots([tree.root])
+    const got = await listTree(roots, tree.root, '')
+    expect(got.entries[0]).toMatchObject({ name: 'sub', kind: 'dir', size: 0 })
   })
 })

@@ -5,8 +5,9 @@
  *
  * Read-only by construction. Nothing in this module writes, stages, or watches.
  */
-import { realpath } from 'node:fs/promises'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { lstat, readdir, realpath } from 'node:fs/promises'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import type { FileTreeEntry, FileTreeResponse } from '../shared/protocol.ts'
 
 export const maxFileBytes = 1024 * 1024
 export const maxTreeEntries = 2000
@@ -108,4 +109,65 @@ export async function confine(
 
   const rel = abs === realRoot ? '' : relative(realRoot, abs).split(sep).join('/')
   return { root: realRoot, abs, rel }
+}
+
+/**
+ * One level of a directory. Does not recurse, does not follow a symlink to describe
+ * it, does not hide dotfiles. Directories first, then by name with plain `<` so the
+ * order does not depend on the locale. A symlink whose target escapes the root is
+ * listed with `outside: true`: visible, and unopenable because `confine` refuses it.
+ */
+export async function listTree(
+  roots: readonly KnownRoot[],
+  root: string,
+  path: string,
+  limit: number = maxTreeEntries
+): Promise<FileTreeResponse> {
+  const got = await confine(roots, root, path)
+  const st = await lstat(got.abs)
+  if (!st.isDirectory()) throw new FileAccessError('not-a-dir')
+
+  const dirents = await readdir(got.abs, { withFileTypes: true })
+  const rank = (d: { isDirectory(): boolean }) => (d.isDirectory() ? 0 : 1)
+  dirents.sort((a, b) => rank(a) - rank(b) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+  const truncated = dirents.length > limit
+  const shown = dirents.slice(0, limit)
+
+  const entries: FileTreeEntry[] = await Promise.all(
+    shown.map(async (d): Promise<FileTreeEntry> => {
+      const full = join(got.abs, d.name)
+      const info = await lstat(full)
+      const kind: FileTreeEntry['kind'] = info.isSymbolicLink()
+        ? 'symlink'
+        : info.isDirectory()
+          ? 'dir'
+          : info.isFile()
+            ? 'file'
+            : 'other'
+      let outside = false
+      if (kind === 'symlink') {
+        // A broken link has no realpath; it cannot be opened either, so it counts as outside.
+        try {
+          outside = !inside(await realpath(full), got.root)
+        } catch {
+          outside = true
+        }
+      }
+      return {
+        name: d.name,
+        path: got.rel === '' ? d.name : `${got.rel}/${d.name}`,
+        kind,
+        size: kind === 'dir' ? 0 : info.size,
+        outside,
+      }
+    })
+  )
+
+  return {
+    root,
+    path: got.rel,
+    entries,
+    truncated,
+    status: { git: false, changes: [] },
+  }
 }
