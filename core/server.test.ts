@@ -721,3 +721,106 @@ describe('core server: embedded context', () => {
     ws.close()
   })
 })
+
+describe('core server: ! and !! shell', () => {
+  let tree: TempTree
+
+  afterEach(async () => {
+    await tree?.cleanup()
+  })
+
+  const open = async (scenario = 'happy') => {
+    tree = await makeTempTree()
+    core = await startCore({ port: 0, backend: `fake:${scenario}`, cwd: tree.root })
+    const ws = new WebSocket(`ws://127.0.0.1:${core.port}/ws`)
+    const messages: any[] = []
+    await once(ws, 'open')
+    ws.on('message', (data) => messages.push(JSON.parse(String(data))))
+    const events = () => messages.filter((m) => m.event).map((m) => m.event)
+    const tools = () => events().filter((e) => e.type === 'tool')
+    const settled = () => tools().some((t) => t.status === 'completed' || t.status === 'failed')
+    const finished = () => events().filter((e) => e.type === 'turn.finished').length
+    return { ws, messages, events, tools, settled, finished }
+  }
+
+  it('runs a ! command and shows it as a tool card', async () => {
+    const t = await open()
+    t.ws.send(JSON.stringify({ type: 'shell', command: 'echo hi', includeInContext: true }))
+    await waitFor(t.settled)
+    const calls = t.tools()
+    const id = calls[0].toolCallId
+    expect(id).toMatch(/^shell-/)
+    expect(calls[0]).toMatchObject({
+      title: '!echo hi',
+      kind: 'execute',
+      status: 'in_progress',
+      origin: 'shell',
+      includeInContext: true,
+    })
+    expect(calls.map((c) => c.toolCallId)).toEqual(calls.map(() => id))
+    expect(calls.map((c) => c.outputDelta ?? '').join('')).toContain('hi')
+    expect(calls.at(-1)).toMatchObject({ status: 'completed', exitCode: 0, origin: 'shell', includeInContext: true })
+    t.ws.close()
+  })
+
+  it('a !! command is tagged local-only and a failed one settles as failed', async () => {
+    const t = await open()
+    t.ws.send(JSON.stringify({ type: 'shell', command: 'exit 3', includeInContext: false }))
+    await waitFor(t.settled)
+    expect(t.tools().at(-1)).toMatchObject({
+      title: '!!exit 3',
+      status: 'failed',
+      exitCode: 3,
+      includeInContext: false,
+    })
+    t.ws.close()
+  })
+
+  it('rejects an empty shell command without spawning anything', async () => {
+    const t = await open()
+    t.ws.send(JSON.stringify({ type: 'shell', command: '   ', includeInContext: true }))
+    await new Promise((r) => setTimeout(r, 200))
+    expect(t.tools()).toEqual([])
+    t.ws.close()
+  })
+
+  it('!! output never reaches session/prompt', async () => {
+    const t = await open()
+    t.ws.send(JSON.stringify({ type: 'shell', command: 'echo SECRET', includeInContext: false }))
+    await waitFor(t.settled)
+    t.ws.send(JSON.stringify({ type: 'prompt', text: 'hello' }))
+    await waitFor(() => t.finished() >= 1)
+    const chunks = t.events().filter((e) => e.type === 'chunk').map((e) => e.text).join('')
+    expect(chunks).toContain('hello')
+    expect(chunks).not.toContain('SECRET')
+    expect(t.events().filter((e) => e.type === 'context')).toEqual([])
+    t.ws.close()
+  })
+
+  it('! output reaches the model only when the client sends it', async () => {
+    const t = await open()
+    t.ws.send(JSON.stringify({ type: 'shell', command: 'echo KEEP', includeInContext: true }))
+    await waitFor(t.settled)
+    t.ws.send(
+      JSON.stringify({
+        type: 'prompt',
+        text: 'first',
+        context: [{ label: '!echo KEEP', text: 'KEEP\n' }],
+      })
+    )
+    await waitFor(() => t.finished() >= 1)
+    const cut = t.messages.findIndex((m) => m.event?.type === 'turn.finished')
+    t.ws.send(JSON.stringify({ type: 'prompt', text: 'second' }))
+    await waitFor(() => t.finished() >= 2)
+    const textOf = (from: number, to: number) =>
+      t.messages
+        .slice(from, to)
+        .filter((m) => m.event?.type === 'chunk')
+        .map((m) => m.event.text)
+        .join('')
+    expect(textOf(0, cut)).toContain('KEEP')
+    expect(textOf(cut + 1, t.messages.length)).toContain('second')
+    expect(textOf(cut + 1, t.messages.length)).not.toContain('KEEP')
+    t.ws.close()
+  })
+})

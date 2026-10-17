@@ -62,6 +62,13 @@ export type TimelineItem =
       /** ACP ToolKind (`edit`, `execute`, …); `kind` is taken by the discriminant. */
       toolKind?: string
       locations: ToolLocation[]
+      /** Accumulated terminal output (`outputDelta`), shown in a `<pre>`. */
+      output?: string
+      exitCode?: number
+      /** `shell`: a user command the core ran, not the agent. */
+      origin?: 'shell'
+      /** `shell`: false for `!!`, which is shown locally and never sent to the model. */
+      includeInContext?: boolean
     }
 
 /** Files touched by `edit` tools, grouped by the turn that touched them. */

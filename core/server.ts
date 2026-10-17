@@ -45,8 +45,10 @@ import {
   ROOT_MANIFEST,
 } from './capabilities.ts'
 import { isOriginAllowed, resolveAllowedOrigins } from './origin.ts'
-import { expandMentions } from './mentions.ts'
-import type { PermissionRequest, SessionConfigOption, UiEvent } from '../shared/protocol.ts'
+import { expandMentions, maxPromptContextBytes } from './mentions.ts'
+import { runShell, type ShellHandle } from './shell.ts'
+import type { AcpContentBlock } from './attachments.ts'
+import type { ContextEntry, PermissionRequest, SessionConfigOption, UiEvent } from '../shared/protocol.ts'
 
 /**
  * The scripted fixture (test seam).
@@ -167,6 +169,10 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
   let conn: AcpConnection | null = null
   /** Set when the next connection should resume a session rather than create one. */
   let resumeTarget: { sessionId: string; cwd: string } | null = null
+  /** The cwd the agent's session was spawned in; mentions and `!` commands resolve against it. */
+  let sessionCwd = cwd
+  /** Live user commands (`!`/`!!`), so a settle can delete and close can kill them. */
+  const shells = new Map<string, ShellHandle>()
   /** The latest session config options, so a new client can be told the model. */
   let configOptions: SessionConfigOption[] = []
   /** Unresolved UI-owned decisions, so their answers can be audited with context. */
@@ -204,6 +210,21 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
       return { command: process.execPath, args: [FIXTURE, id.slice('fake:'.length)], cwd }
     }
     return { ...resolveBackend(id), cwd }
+  }
+
+  /** Client-sent context as text blocks, bounded; a malformed entry is dropped, not trusted. */
+  const contextBlocks = (entries: unknown): AcpContentBlock[] => {
+    if (!Array.isArray(entries)) return []
+    const blocks: AcpContentBlock[] = []
+    let bytes = 0
+    for (const entry of entries as Partial<ContextEntry>[]) {
+      if (typeof entry?.label !== 'string' || typeof entry?.text !== 'string') continue
+      const text = `${entry.label}\n${entry.text}`
+      bytes += Buffer.byteLength(text)
+      if (bytes > maxPromptContextBytes) break
+      blocks.push({ type: 'text', text })
+    }
+    return blocks
   }
 
   const label = (id: string) => id.charAt(0).toUpperCase() + id.slice(1)
@@ -367,11 +388,12 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
    * Attach the agent to an existing session. A fresh connection loads it, and the
    * agent's replayed `session/update`s rebuild the transcript for every client.
    */
-  const resumeSession = (id: string, sessionCwd: string) => {
+  const resumeSession = (id: string, resumeCwd: string) => {
     sessionSwitch = (async () => {
       conn?.close()
       conn = null
-      resumeTarget = { sessionId: id, cwd: sessionCwd || cwd }
+      resumeTarget = { sessionId: id, cwd: resumeCwd || cwd }
+      sessionCwd = resumeTarget.cwd
       await ensureConnection().open()
     })()
   }
@@ -384,11 +406,46 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
       conn?.close()
       conn = null
       resumeTarget = null
+      sessionCwd = cwd
       configOptions = []
       sendToAll({ type: 'state', key: 'config', value: configState() })
       await ensureConnection().open()
       broadcast({ type: 'session.reset', reason: 'new' })
     })()
+  }
+
+  /**
+   * Run a `!`/`!!` command in the session cwd and stream it as one tool card. The card
+   * is the only record: nothing is buffered here for a later prompt. `includeInContext`
+   * is stamped on every event, so no client branch can mistake a `!!` for a `!`.
+   */
+  const runUserShell = (command: string, includeInContext: boolean) => {
+    const shellId = 'shell-' + randomUUID()
+    const title = (includeInContext ? '!' : '!!') + command
+    const tool = (over: Partial<Extract<UiEvent, { type: 'tool' }>>) =>
+      broadcast({
+        type: 'tool',
+        toolCallId: shellId,
+        title,
+        kind: 'execute',
+        origin: 'shell',
+        includeInContext,
+        ...over,
+      })
+    tool({ status: 'in_progress' })
+    const handle = runShell({
+      command,
+      cwd: sessionCwd,
+      onChunk: ({ text }) => tool({ status: 'in_progress', outputDelta: text }),
+    })
+    shells.set(shellId, handle)
+    void handle.result.then((result) => {
+      shells.delete(shellId)
+      tool({
+        status: result.exitCode === 0 ? 'completed' : 'failed',
+        ...(result.exitCode !== null ? { exitCode: result.exitCode } : {}),
+      })
+    })
   }
 
   const toUiSession = (session: SessionSummary) => ({
@@ -439,7 +496,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
   const knownRoots = async (): Promise<KnownRoot[]> => {
     if (Date.now() - knownAt < 5000) return knownSet
     knownAt = Date.now()
-    knownGivens.add(resumeTarget?.cwd ?? cwd)
+    knownGivens.add(sessionCwd)
     try {
       const sessions =
         (conn !== null ? await acpSessions() : null) ?? (await listSessions(sessionsRoot))
@@ -682,7 +739,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
             // before the prompt leaves; the text itself is shipped untouched.
             const mentions = await expandMentions({
               text: msg.text,
-              root: resumeTarget?.cwd ?? cwd,
+              root: sessionCwd,
               roots: await knownRoots(),
               caps: { embeddedContext: live.capabilities().embeddedContext },
             })
@@ -690,11 +747,28 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
             const blocks = await attachmentBlocks(join(attachmentsBase, randomUUID()), attachments, {
               image: live.capabilities().image,
             })
-            await live.prompt(msg.text, [...mentions.blocks, ...blocks], { steer: msg.steer === true })
+            // Client-chosen context (a `!` result the user sent) rides ahead of the prompt.
+            // The core holds no shell output of its own: this is the only way it reaches the model.
+            await live.prompt(
+              msg.text,
+              [...contextBlocks(msg.context), ...mentions.blocks, ...blocks],
+              { steer: msg.steer === true }
+            )
           } catch (error) {
             broadcast({ type: 'error', message: (error as Error).message })
           }
         })()
+        return
+      }
+
+      if (msg.type === 'shell' && typeof msg.command === 'string') {
+        if (!msg.command.trim()) return
+        runUserShell(msg.command, msg.includeInContext === true)
+        return
+      }
+
+      if (msg.type === 'shell.cancel' && typeof msg.shellId === 'string') {
+        shells.get(msg.shellId)?.cancel()
         return
       }
 
@@ -721,6 +795,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
             conn?.close()
             conn = null
             resumeTarget = { sessionId: id, cwd }
+            sessionCwd = cwd
             configOptions = []
             sendToAll({ type: 'state', key: 'config', value: configState() })
             await ensureConnection().open()
@@ -874,6 +949,8 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
       componentWatcher.close()
       configWatcher.close()
       conn?.close()
+      for (const handle of shells.values()) handle.cancel()
+      shells.clear()
       for (const client of clients) client.terminate()
       clients.clear()
       await new Promise<void>((resolve) => wss.close(() => resolve()))

@@ -224,3 +224,67 @@ describe('queue depth', () => {
     expect(applyEvent(state, { type: 'session.reset', reason: 'new' }).queued).toBe(0)
   })
 })
+
+describe('shell tool output', () => {
+  const shell = (over: Partial<Extract<UiEvent, { type: 'tool' }>> = {}): UiEvent =>
+    tool({
+      toolCallId: 'shell-1',
+      title: '!echo hi',
+      kind: 'execute',
+      origin: 'shell',
+      includeInContext: true,
+      status: 'in_progress',
+      ...over,
+    })
+
+  it('accumulates shell output from outputDelta', () => {
+    const state = apply([shell(), shell({ outputDelta: 'a\n' }), shell({ outputDelta: 'b\n' })])
+    const item = state.items[0] as any
+    expect(item.output).toBe('a\nb\n')
+    expect(item).toMatchObject({ origin: 'shell', includeInContext: true })
+  })
+
+  it('captures a completed ! result into context', () => {
+    const state = apply([
+      shell(),
+      shell({ outputDelta: 'hi\n' }),
+      shell({ status: 'completed', exitCode: 0 }),
+    ])
+    expect(state.context).toEqual([{ label: '!echo hi', text: 'hi\n' }])
+    expect((state.items[0] as any).exitCode).toBe(0)
+  })
+
+  it('never captures a !! result', () => {
+    const state = apply([
+      shell({ title: '!!echo SECRET', includeInContext: false }),
+      shell({ title: '!!echo SECRET', includeInContext: false, outputDelta: 'SECRET\n' }),
+      shell({ title: '!!echo SECRET', includeInContext: false, status: 'completed', exitCode: 0 }),
+    ])
+    expect(state.context).toEqual([])
+  })
+
+  it('does not capture a failed ! result', () => {
+    const state = apply([
+      shell({ outputDelta: 'nope\n' }),
+      shell({ status: 'failed', exitCode: 1 }),
+    ])
+    expect(state.context).toEqual([])
+  })
+
+  it('caps a captured result at 32 KiB', () => {
+    const big = 'x'.repeat(40 * 1024)
+    const state = apply([
+      shell({ outputDelta: big }),
+      shell({ status: 'completed', exitCode: 0 }),
+    ])
+    expect(state.context[0]!.text.length).toBe(32 * 1024)
+    expect(state.context[0]!.truncated).toBe(true)
+  })
+
+  it('starts with no context and a reset clears it', () => {
+    expect(empty().context).toEqual([])
+    const state = apply([shell({ outputDelta: 'hi\n' }), shell({ status: 'completed', exitCode: 0 })])
+    expect(state.context).toHaveLength(1)
+    expect(applyEvent(state, { type: 'session.reset', reason: 'new' }).context).toEqual([])
+  })
+})

@@ -27,6 +27,13 @@ export interface AvailableCommand {
   input?: unknown
 }
 
+/** A piece of composer context the client chooses to send with a prompt. */
+export interface ContextEntry {
+  label: string
+  text: string
+  truncated?: boolean
+}
+
 export type UiEvent =
   | { type: 'chunk'; text: string }
   | { type: 'user.chunk'; text: string }
@@ -53,6 +60,10 @@ export type UiEvent =
       outputDelta?: string
       /** Exit code of a finished terminal tool (`_meta.terminal_exit.exit_code`). */
       exitCode?: number
+      /** `shell`: a user-typed `!`/`!!` command run by the core, not the agent. */
+      origin?: 'shell'
+      /** `shell`: true for `!` (the client may send the output to the model), false for `!!`. */
+      includeInContext?: boolean
     }
   /** A replayed user attachment (non-text content block). */
   | { type: 'attachment'; mimeType: string; name?: string; data?: string; uri?: string }
@@ -130,7 +141,10 @@ export interface AgentCapabilities {
 /** Client -> core. */
 export type ClientToCore =
   /** `steer`: cancel the in-flight turn and run this prompt next, ahead of follow-ups. */
-  | { type: 'prompt'; text: string; attachments?: Attachment[]; steer?: boolean }
+  | { type: 'prompt'; text: string; attachments?: Attachment[]; steer?: boolean; context?: ContextEntry[] }
+  /** Run a user command in the core. `includeInContext` is the `!`/`!!` split. */
+  | { type: 'shell'; command: string; includeInContext: boolean }
+  | { type: 'shell.cancel'; shellId: string }
   | { type: 'cancel' }
   /** Drop the waiting prompts; the in-flight turn is untouched. */
   | { type: 'queue.clear' }

@@ -355,3 +355,58 @@ describe('composer', () => {
     expect(el.querySelector('button[data-command="compact"]')).not.toBeNull()
   })
 })
+
+describe('shell tool cards', () => {
+  const shellItem = (over: Record<string, unknown> = {}): TimelineItem =>
+    ({
+      id: 's1',
+      kind: 'tool',
+      toolCallId: 'shell-42',
+      title: '!!ls',
+      status: 'completed',
+      toolKind: 'execute',
+      locations: [],
+      origin: 'shell',
+      includeInContext: false,
+      output: 'out-text <b>\n',
+      exitCode: 0,
+      ...over,
+    }) as TimelineItem
+
+  const ctxWith = (items: TimelineItem[], dispatch: (type: string, payload?: unknown) => void) => {
+    const base = withMessages(0)
+    return { ...base, host: { ...base.host, items }, dispatch } as RenderContext
+  }
+
+  it('renders shell output as text, the exit code and a local-only tag', () => {
+    const el = renderTree({ type: 'transcript' }, ctxWith([shellItem()], () => {})) as HTMLElement
+    const pre = el.querySelector('pre') as HTMLElement
+    expect(pre.textContent).toBe('out-text <b>\n')
+    expect(pre.innerHTML).not.toContain('<b>')
+    expect(el.textContent).toContain('exit 0')
+    expect(el.textContent).toContain('local only')
+  })
+
+  it('omits the local-only tag for a ! result the model receives', () => {
+    const el = renderTree(
+      { type: 'transcript' },
+      ctxWith([shellItem({ title: '!ls', includeInContext: true })], () => {})
+    ) as HTMLElement
+    expect(el.textContent).not.toContain('local only')
+  })
+
+  it('offers a stop button on a running shell card that dispatches shell.cancel', () => {
+    const calls: unknown[] = []
+    const el = renderTree(
+      { type: 'transcript' },
+      ctxWith(
+        [shellItem({ status: 'in_progress', exitCode: undefined })],
+        (type, payload) => calls.push([type, payload])
+      )
+    ) as HTMLElement
+    const stop = el.querySelector('[data-shell-stop]') as HTMLButtonElement
+    expect(stop).not.toBeNull()
+    stop.click()
+    expect(calls).toEqual([['shell.cancel', { shellId: 'shell-42' }]])
+  })
+})

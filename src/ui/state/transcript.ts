@@ -6,7 +6,13 @@
  * happened. Also the source for changed files (per turn) and the agent's
  * capabilities. Keeping it pure keeps the awkward cases pinned by ordinary tests.
  */
-import type { AgentCapabilities, Attachment, PermissionRequest, UiEvent } from '../../../shared/protocol.ts'
+import type {
+  AgentCapabilities,
+  Attachment,
+  ContextEntry,
+  PermissionRequest,
+  UiEvent,
+} from '../../../shared/protocol.ts'
 import type { ChangedFilesGroup, HostMessage, TimelineItem, ToolLocation } from '../../../shared/ui.ts'
 import type { AvailableCommand } from '../../../shared/protocol.ts'
 
@@ -33,7 +39,12 @@ export interface Transcript {
   liveTurn?: number
   /** Prompts waiting behind the in-flight turn. */
   queued: number
+  /** Completed `!` results the client may send with the next prompt. Never `!!`. */
+  context: ContextEntry[]
 }
+
+/** The most a captured `!` result carries into a prompt. */
+export const maxCapturedBytes = 32 * 1024
 
 const noCapabilities = (): AgentCapabilities => ({
   image: false,
@@ -51,6 +62,7 @@ export const empty = (): Transcript => ({
   capabilities: noCapabilities(),
   turn: 0,
   queued: 0,
+  context: [],
 })
 
 let sequence = 0
@@ -106,7 +118,28 @@ const makeTool = (event: Extract<UiEvent, { type: 'tool' }>): TimelineItem => ({
   status: event.status,
   toolKind: event.kind,
   locations: event.locations ?? [],
+  // The first event may already carry the whole output (a fast shell), so seed it like an update would.
+  output: event.outputDelta ?? '',
+  ...(event.exitCode !== undefined ? { exitCode: event.exitCode } : {}),
+  ...(event.origin ? { origin: event.origin } : {}),
+  ...(event.includeInContext !== undefined ? { includeInContext: event.includeInContext } : {}),
 })
+
+/** Capture a finished `!` result for the next prompt; `!!` and failed runs never qualify. */
+const captureShell = (
+  context: ContextEntry[],
+  tool: Extract<TimelineItem, { kind: 'tool' }>
+): ContextEntry[] => {
+  if (tool.origin !== 'shell' || tool.includeInContext !== true || tool.status !== 'completed') return context
+  const output = tool.output ?? ''
+  const capped = output.length > maxCapturedBytes
+  const entry: ContextEntry = {
+    label: tool.title,
+    text: capped ? output.slice(0, maxCapturedBytes) : output,
+    ...(capped ? { truncated: true } : {}),
+  }
+  return [...context, entry]
+}
 
 export function applyEvent(state: Transcript, event: UiEvent): Transcript {
   switch (event.type) {
@@ -166,6 +199,7 @@ export function applyEvent(state: Transcript, event: UiEvent): Transcript {
         (item) => item.kind === 'tool' && item.toolCallId === event.toolCallId
       )
       const items = state.items.slice()
+      const previousStatus = index >= 0 ? (items[index] as Extract<TimelineItem, { kind: 'tool' }>).status : undefined
       if (index >= 0) {
         const existing = items[index] as Extract<TimelineItem, { kind: 'tool' }>
         items[index] = {
@@ -177,6 +211,10 @@ export function applyEvent(state: Transcript, event: UiEvent): Transcript {
           locations: event.locations
             ? dedupeLocations([...existing.locations, ...event.locations])
             : existing.locations,
+          ...(event.outputDelta ? { output: (existing.output ?? '') + event.outputDelta } : {}),
+          ...(event.exitCode !== undefined ? { exitCode: event.exitCode } : {}),
+          ...(event.origin ? { origin: event.origin } : {}),
+          ...(event.includeInContext !== undefined ? { includeInContext: event.includeInContext } : {}),
         }
       } else {
         items.push(makeTool(event))
@@ -189,7 +227,10 @@ export function applyEvent(state: Transcript, event: UiEvent): Transcript {
         tool && tool.toolKind === 'edit' && tool.locations.length > 0
           ? recordChangedFiles(state.changedFiles, state.turn, tool.locations)
           : state.changedFiles
-      return { ...state, items, changedFiles }
+      // Capture on the first transition to completed only, so a repeated status cannot add a copy.
+      const settled = tool && event.status === 'completed' && previousStatus !== 'completed' ? tool : undefined
+      const context = settled ? captureShell(state.context, settled) : state.context
+      return { ...state, items, changedFiles, context }
     }
 
     case 'attachment': {

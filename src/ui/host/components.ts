@@ -124,7 +124,7 @@ const attachmentChip = (attachment: Attachment): HTMLElement => {
 }
 
 /** One timeline entry. Model text goes through renderMarkdown, never innerHTML. */
-const renderItem = (item: TimelineItem): HTMLElement => {
+const renderItem = (item: TimelineItem, host: HTMLElement): HTMLElement => {
   const wrap = document.createElement('div')
   wrap.dataset.item = item.kind
 
@@ -220,7 +220,58 @@ const renderItem = (item: TimelineItem): HTMLElement => {
   title.style.cssText =
     'font-family:var(--sbh-font-mono);font-size:var(--sbh-font-size-sm);overflow:hidden;' +
     'text-overflow:ellipsis;white-space:nowrap'
-  wrap.append(dot, title)
+  const row = document.createElement('div')
+  row.style.cssText = 'display:flex;gap:var(--sbh-space-xs);align-items:center;min-width:0'
+  row.append(dot, title)
+  const hasOutput = typeof item.output === 'string' && item.output.length > 0
+  if (!hasOutput && item.origin !== 'shell' && item.exitCode === undefined && item.includeInContext !== false) {
+    wrap.append(row)
+    return wrap
+  }
+  // Shell cards stack the output below the title row; agent cards keep the single row.
+  wrap.style.flexDirection = 'column'
+  wrap.style.alignItems = 'stretch'
+  wrap.append(row)
+  if (hasOutput) {
+    const pre = document.createElement('pre')
+    pre.textContent = item.output ?? ''
+    pre.style.cssText =
+      'font-family:var(--sbh-font-mono);font-size:var(--sbh-font-size-sm);margin:0;white-space:pre-wrap;' +
+      'word-break:break-word;max-height:40vh;overflow:auto;padding:var(--sbh-space-xs);' +
+      'border-radius:var(--sbh-radius-sm);background:var(--sbh-color-surface)'
+    wrap.append(pre)
+  }
+  const meta = document.createElement('div')
+  meta.style.cssText = 'display:flex;gap:var(--sbh-space-sm);align-items:center;font-family:var(--sbh-font-mono)'
+  const muted = 'color:var(--sbh-color-text-muted);font-size:var(--sbh-font-size-sm)'
+  if (typeof item.exitCode === 'number') {
+    const code = document.createElement('span')
+    code.textContent = `exit ${item.exitCode}`
+    code.style.cssText = muted
+    meta.append(code)
+  }
+  if (item.includeInContext === false) {
+    const local = document.createElement('span')
+    local.textContent = 'local only'
+    local.style.cssText = muted
+    meta.append(local)
+  }
+  if (item.origin === 'shell' && (item.status === 'in_progress' || item.status === 'pending')) {
+    const stop = document.createElement('button')
+    stop.type = 'button'
+    stop.textContent = 'Stop'
+    stop.setAttribute('data-shell-stop', '')
+    stop.style.cssText =
+      'border:1px solid var(--sbh-color-border);background:var(--sbh-color-surface);' +
+      'color:var(--sbh-color-text-muted);border-radius:var(--sbh-radius-sm);padding:0 var(--sbh-space-xs);' +
+      'font-family:var(--sbh-font-sans);font-size:var(--sbh-font-size-sm);cursor:pointer'
+    stop.addEventListener('click', () => {
+      const live = getLive(host)
+      live?.ctx.dispatch('shell.cancel', { shellId: item.toolCallId })
+    })
+    meta.append(stop)
+  }
+  if (meta.childElementCount > 0) wrap.append(meta)
   return wrap
 }
 
@@ -256,7 +307,7 @@ function paintTranscript(host: Windowed, ctx: RenderContext): void {
   for (let index = start; index < items.length; index += 1) {
     const item = items[index]
     if (!item) continue
-    host.appendChild(renderItem(item))
+    host.appendChild(renderItem(item, host))
   }
 
   if (ctx.host.status === 'error' && ctx.host.error) {
