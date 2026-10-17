@@ -214,6 +214,31 @@ describe('App', () => {
     })
   })
 
+  it('sends the staged attachment even when Enter lands before the re-render', async () => {
+    await withSocket(async (socket, host) => {
+      const input = host.querySelector('input[data-atom="input"]') as HTMLInputElement
+      // The composer's live ctx is the one the keydown handler reads. Grab it before
+      // the attachment is staged: Preact has not re-rendered yet, so it is still the
+      // pre-attachment closure, exactly the window a fast keypress lands in.
+      const liveKey = Symbol.for('sbh.live')
+      let node: Element | null = input
+      let ctx: { dispatch: (action: string, payload?: unknown) => void } | undefined
+      while (node && !ctx) {
+        ctx = (node as unknown as Record<symbol, { ctx: typeof ctx }>)[liveKey]?.ctx
+        node = node.parentElement
+      }
+      expect(ctx).toBeDefined()
+      ctx!.dispatch('attachment.add', {
+        attachment: { name: 'note.txt', mimeType: 'text/plain', data: 'aGk=' },
+      })
+      input.value = 'read this'
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+      await tick()
+      const sent = socket.sent.find((m) => (m as { text?: string }).text === 'read this') as { attachments?: unknown[] }
+      expect(sent?.attachments).toEqual([{ name: 'note.txt', mimeType: 'text/plain', data: 'aGk=' }])
+    })
+  })
+
   it('sends captured context with the next prompt only', async () => {
     await withSocket(async (socket, host) => {
       socket.onmessage?.({ data: JSON.stringify({ type: 'event', event: { type: 'turn.started' } }) })

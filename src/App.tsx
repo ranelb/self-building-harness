@@ -65,6 +65,14 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
   latestTranscript.current = transcript
   const [draft, setDraft] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
+  // Same pattern as `latestTranscript`: handlers bound before a state change must read the latest value.
+  const latestAttachments = useRef(attachments)
+  latestAttachments.current = attachments
+  /** Update the ref and the state together, so a send before the re-render still sees the change. */
+  const setAttachmentsNow = (next: (previous: Attachment[]) => Attachment[]) => {
+    latestAttachments.current = next(latestAttachments.current)
+    setAttachments(latestAttachments.current)
+  }
   const [components, setComponents] = useState<LoadReport | null>(null)
   const [tokens, setTokens] = useState<Record<string, string>>({})
   const [layout, setLayout] = useState<UiNode>(DEFAULT_LAYOUT)
@@ -227,13 +235,13 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
 
         case 'attachment.add': {
           const attachment = props?.attachment
-          if (attachment) setAttachments((previous) => [...previous, attachment])
+          if (attachment) setAttachmentsNow((previous) => [...previous, attachment])
           return
         }
 
         case 'attachment.remove': {
           const index = Number(props?.index)
-          setAttachments((previous) => previous.filter((_, at) => at !== index))
+          setAttachmentsNow((previous) => previous.filter((_, at) => at !== index))
           return
         }
 
@@ -256,7 +264,7 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
 
         case 'message.edit': {
           const id = String(props?.id ?? '')
-          const item = transcript.items.find((entry) => entry.kind === 'user' && entry.id === id)
+          const item = latestTranscript.current.items.find((entry) => entry.kind === 'user' && entry.id === id)
           if (!item || item.kind !== 'user') return
           // Prefill and dim the original; a true branch needs a backend fork point.
           setDraft(item.text)
@@ -277,7 +285,7 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
           // state can lag a keystroke, which silently truncated sent prompts.
           const live = host.current?.querySelector<HTMLInputElement>('input[data-atom="input"]')
           const text = (live?.value ?? draft).trim()
-          const outgoing = attachments
+          const outgoing = latestAttachments.current
           if (!text && outgoing.length === 0) return
           // `!` and `!!` are shell commands run by the core, never prompts. Attachments stay staged.
           const shell = parseShellCommand(text)
@@ -292,8 +300,9 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
           // edit is the last user turn; otherwise it is a resend (dimmed above).
           const editing = pendingEdit.current
           pendingEdit.current = null
-          if (editing && transcript.capabilities.fork) {
-            const lastUser = [...transcript.items].reverse().find((entry) => entry.kind === 'user')
+          const current = latestTranscript.current
+          if (editing && current.capabilities.fork) {
+            const lastUser = [...current.items].reverse().find((entry) => entry.kind === 'user')
             if (lastUser?.id === editing) stream.current?.send({ type: 'session.fork' })
           }
           setTranscript((previous) => withUserMessage(previous, text, outgoing))
@@ -312,7 +321,7 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
           }
           if (live) live.value = ''
           setDraft('')
-          setAttachments([])
+          setAttachmentsNow(() => [])
           return
         }
 
