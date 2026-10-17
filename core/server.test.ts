@@ -696,3 +696,28 @@ describe('core server: @path:lines mentions', () => {
     ws.close()
   })
 })
+
+describe('core server: embedded context', () => {
+  let tree: TempTree
+
+  afterEach(async () => {
+    await tree?.cleanup()
+  })
+
+  it('an agent that embeds context gets a resource block, not the file text in the stream', async () => {
+    tree = await makeTempTree()
+    core = await startCore({ port: 0, backend: 'fake:blocks', cwd: tree.root })
+    const ws = new WebSocket(`ws://127.0.0.1:${core.port}/ws`)
+    const messages: any[] = []
+    await once(ws, 'open')
+    ws.on('message', (data) => messages.push(JSON.parse(String(data))))
+    ws.send(JSON.stringify({ type: 'prompt', text: 'see @a.txt:1-2' }))
+
+    await waitFor(() => messages.some((m) => m.event?.type === 'turn.finished'))
+    const text = messages.filter((m) => m.event?.type === 'chunk').map((m) => m.event.text).join('')
+    expect(text).toContain('resource:')
+    expect(text).not.toContain('hello')
+    expect(text).not.toContain('world')
+    ws.close()
+  })
+})

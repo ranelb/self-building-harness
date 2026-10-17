@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url'
 
 export const SCENARIOS = [
   'happy',
+  'blocks',
   'permission',
   'unknown-update',
   'usage',
@@ -226,7 +227,12 @@ async function serve(scenario: Scenario): Promise<void> {
             protocolVersion: msg.params?.protocolVersion ?? PROTOCOL_VERSION,
             agentCapabilities: {
               loadSession: true,
-              promptCapabilities: { image: true, audio: false, embeddedContext: false },
+              promptCapabilities: {
+                image: true,
+                audio: false,
+                // Only the `blocks` scenario embeds context; every other one stays false.
+                embeddedContext: scenario === 'blocks',
+              },
               sessionCapabilities: { list: {}, fork: {} },
             },
             agentInfo: { name: 'fake-acp-agent', version: '0.0.0' },
@@ -320,6 +326,19 @@ async function serve(scenario: Scenario): Promise<void> {
   }
 
   async function answerPrompt(msg: any): Promise<void> {
+        if (scenario === 'blocks') {
+          // One chunk per content block, `<type>:<byteLength>` of the block as sent, so a
+          // client can prove which form arrived without the fixture echoing its text.
+          for (const block of msg.params?.prompt ?? []) {
+            write({
+              jsonrpc: '2.0',
+              method: 'session/update',
+              params: { sessionId: SESSION_ID, update: chunkUpdate(`${block.type}:${Buffer.byteLength(JSON.stringify(block))}`) },
+            })
+          }
+          if (msg.id !== undefined) write({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
+          return
+        }
         if (scenario === 'steer') {
           const say = (text: string) =>
             write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: SESSION_ID, update: chunkUpdate(text) } })
