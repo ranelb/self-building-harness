@@ -126,3 +126,63 @@ export type CoreToClient =
   | { type: 'state'; key: string; value: unknown }
   /** A watched file changed; the client should re-fetch. Hot reload. */
   | { type: 'invalidate'; what: 'components' | 'theme' | 'layout'; profile?: string }
+
+/** One entry of a single-level listing. `path` is root-relative, `/`-separated. */
+export interface FileTreeEntry {
+  name: string
+  path: string
+  kind: 'file' | 'dir' | 'symlink' | 'other'
+  /** Bytes; 0 for a directory. For a symlink, the link's own size. */
+  size: number
+  /** True when the entry resolves outside the root: shown, never openable. */
+  outside: boolean
+}
+
+/** One record of `git status --porcelain=v1`. */
+export interface FileChange {
+  /** Root-relative, `/`-separated. */
+  path: string
+  /** Porcelain X (index): `' '`, `M`, `A`, `D`, `R`, `?`, … */
+  index: string
+  /** Porcelain Y (work tree). */
+  worktree: string
+  /** For `R`/`C`, the previous path. */
+  originPath?: string
+}
+
+export interface FileStatus {
+  /** False when the root is not a work tree, git is missing, or the call failed. */
+  git: boolean
+  changes: FileChange[]
+}
+
+export interface FileTreeResponse {
+  root: string
+  /** The requested directory, root-relative; `''` for the root itself. */
+  path: string
+  entries: FileTreeEntry[]
+  /** True when the directory had more than `maxTreeEntries` entries. */
+  truncated: boolean
+  status: FileStatus
+}
+
+export interface FileTextResponse {
+  root: string
+  path: string
+  size: number
+  text: string
+  /** True when the file is larger than `maxFileBytes`; `text` is the prefix. */
+  truncated: boolean
+  /** True when a NUL byte appeared in the first 8 KiB; `text` is then `''`. */
+  binary: boolean
+}
+
+export interface FileDiffResponse {
+  root: string
+  path: string
+  patch: string
+  /** The path is untracked: `patch` is empty and the client should show the file. */
+  untracked: boolean
+  /** The patch came from `--cached` because the work tree matches the index. */
+  staged: boolean
+}
