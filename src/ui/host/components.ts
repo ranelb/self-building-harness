@@ -16,7 +16,7 @@ import {
 } from '../tree/render.ts'
 import { renderMarkdown } from '../tree/markdown.ts'
 import { controlStyle, fieldStyle } from '../atoms/style.ts'
-import type { Attachment, AvailableCommand } from '../../../shared/protocol.ts'
+import type { Attachment, AvailableCommand, ContextEntry } from '../../../shared/protocol.ts'
 import type { TimelineItem } from '../../../shared/ui.ts'
 
 const stream = (el: HTMLElement, node: UiNode): void => {
@@ -199,6 +199,19 @@ const renderItem = (item: TimelineItem, host: HTMLElement): HTMLElement => {
     const label = document.createElement('span')
     label.textContent = item.pending ? 'compacting context' : 'context compacted'
     wrap.append(rule(), label, rule())
+    return wrap
+  }
+
+  if (item.kind === 'context') {
+    // A mention the core resolved (or refused): the label is ours, the path is the user's, both as text.
+    const skipped = item.status === 'skipped'
+    wrap.style.cssText =
+      'display:flex;align-items:center;gap:var(--sbh-space-xs);font-family:var(--sbh-font-mono);' +
+      'font-size:var(--sbh-font-size-sm);color:var(--sbh-color-text-muted);' +
+      (skipped ? 'opacity:.6;font-style:italic' : '')
+    const lines = item.lines ? `${item.lines.end - item.lines.start + 1} lines` : item.status
+    wrap.textContent = `${item.mention} · ${lines}`
+    if (skipped && item.reason) wrap.title = item.reason
     return wrap
   }
 
@@ -597,6 +610,38 @@ const paintComposerError = (el: ComposerHost): void => {
   node.textContent = el.__error ?? ''
 }
 
+/** The `!` results that will ride the next prompt, each removable before it is sent. */
+const paintContext = (tray: HTMLElement, entries: ContextEntry[], el: ComposerHost): void => {
+  if (entries.length === 0) {
+    tray.style.display = 'none'
+    tray.replaceChildren()
+    return
+  }
+  tray.style.display = 'flex'
+  tray.replaceChildren()
+  entries.forEach((entry, index) => {
+    const chip = document.createElement('span')
+    chip.style.cssText =
+      'display:inline-flex;align-items:center;gap:var(--sbh-space-xs);border:1px dashed var(--sbh-color-border);' +
+      'border-radius:var(--sbh-radius-md);padding:2px 6px;font-family:var(--sbh-font-mono);' +
+      'font-size:var(--sbh-font-size-sm);color:var(--sbh-color-text-muted);max-width:260px'
+    const label = document.createElement('span')
+    label.textContent = entry.label
+    label.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap'
+    const remove = document.createElement('button')
+    remove.textContent = '\u00d7'
+    remove.title = 'Remove from the next prompt'
+    remove.style.cssText =
+      'border:none;background:transparent;color:var(--sbh-color-text-muted);cursor:pointer;font-size:14px;line-height:1'
+    remove.addEventListener('click', () => {
+      const live = getLive(el)
+      if (live) live.ctx.dispatch('context.remove', { index })
+    })
+    chip.append(label, remove)
+    tray.appendChild(chip)
+  })
+}
+
 /** Read dropped/picked/pasted files into base64 attachments, with a size guard. */
 const addFiles = (el: ComposerHost, files: File[]): void => {
   el.__error = undefined
@@ -730,6 +775,11 @@ registerComponent({
 
     const tray = document.createElement('div')
     tray.setAttribute('data-attachments', '')
+
+    const context = document.createElement('div')
+    context.setAttribute('data-context', '')
+    context.style.cssText = 'display:none;flex-wrap:wrap;gap:var(--sbh-space-xs)'
+
     tray.style.cssText = 'display:none;flex-wrap:wrap;gap:var(--sbh-space-xs)'
 
     const error = document.createElement('div')
@@ -863,7 +913,7 @@ registerComponent({
       'background:var(--sbh-color-surface);padding:var(--sbh-space-xs)'
 
     row.append(attach, input, queued, clear, queue, send)
-    el.append(menu, tray, error, row, picker)
+    el.append(menu, context, tray, error, row, picker)
     return el
   },
   update(el, _node, ctx) {
@@ -892,6 +942,9 @@ registerComponent({
 
     const tray = element.querySelector('[data-attachments]') as HTMLElement | null
     if (tray) paintAttachments(tray, ctx.host.draftAttachments, element)
+
+    const contextTray = element.querySelector('[data-context]') as HTMLElement | null
+    if (contextTray) paintContext(contextTray, ctx.host.pendingContext, element)
 
     const error = element.querySelector('[data-composer-error]') as HTMLElement | null
     if (error) {

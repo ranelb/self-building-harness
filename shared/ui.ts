@@ -3,7 +3,13 @@
  * and consumed by the UI.
  */
 
-import type { AgentCapabilities, Attachment, AvailableCommand, PermissionRequest } from './protocol.ts'
+import type {
+  AgentCapabilities,
+  Attachment,
+  AvailableCommand,
+  ContextEntry,
+  PermissionRequest,
+} from './protocol.ts'
 
 export interface UiNode {
   type: string
@@ -53,6 +59,8 @@ export type TimelineItem =
   | { id: string; kind: 'thought'; text: string }
   /** A compaction marker. `pending` while the agent is still compacting. */
   | { id: string; kind: 'divider'; pending?: boolean }
+  /** An `@path:lines` mention the core resolved, or refused (`reason`). */
+  | { id: string; kind: 'context'; mention: string; status: 'included' | 'skipped'; lines?: { start: number; end: number }; reason?: string }
   | {
       id: string
       kind: 'tool'
@@ -109,6 +117,8 @@ export interface HostState {
   commands: AvailableCommand[]
   /** Attachments staged in the composer, not yet sent. */
   draftAttachments: Attachment[]
+  /** `!` results that will ride the next prompt; shown as removable chips. */
+  pendingContext: ContextEntry[]
   /** What the agent reported it can do (image, fork, …). */
   capabilities: AgentCapabilities
   status: 'idle' | 'streaming' | 'error'

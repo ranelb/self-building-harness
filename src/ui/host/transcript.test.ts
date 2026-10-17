@@ -28,6 +28,7 @@ const withMessages = (count: number): RenderContext => {
       queued: 0,
       draft: '',
       pendingPermission: [],
+      pendingContext: [],
       notices: [],
       harness: { value: 'pi', options: [] },
       model: { value: '', options: [] },
@@ -408,5 +409,38 @@ describe('shell tool cards', () => {
     expect(stop).not.toBeNull()
     stop.click()
     expect(calls).toEqual([['shell.cancel', { shellId: 'shell-42' }]])
+  })
+})
+
+describe('composer context', () => {
+  it('renders a context row', () => {
+    const base = withMessages(0)
+    const ctx: RenderContext = {
+      ...base,
+      host: {
+        ...base.host,
+        items: [
+          { id: 'c1', kind: 'context', mention: '@a.ts:1-3', status: 'included', lines: { start: 1, end: 3 } },
+        ],
+      },
+    }
+    const el = renderTree({ type: 'transcript' }, ctx) as HTMLElement
+    const row = el.querySelector('[data-item="context"]') as HTMLElement
+    expect(row).not.toBeNull()
+    expect(row.textContent).toBe('@a.ts:1-3 · 3 lines')
+  })
+
+  it('lists pending context and dispatches context.remove', () => {
+    const base = withMessages(0)
+    const actions: Array<[string, unknown]> = []
+    const ctx: RenderContext = {
+      ...base,
+      host: { ...base.host, pendingContext: [{ label: '!ls', text: 'a.txt' }] },
+      dispatch: (action: string, payload?: unknown) => actions.push([action, payload]),
+    }
+    const el = renderTree({ type: 'composer' }, ctx) as HTMLElement
+    expect(el.querySelector('[data-context]')?.textContent).toContain('!ls')
+    ;(el.querySelector('[data-context] button') as HTMLButtonElement).click()
+    expect(actions).toEqual([['context.remove', { index: 0 }]])
   })
 })

@@ -17,6 +17,7 @@ const ctx: RenderContext = {
     queued: 0,
     draft: '',
     pendingPermission: [],
+    pendingContext: [],
     notices: [],
     harness: { value: 'pi', options: [] },
     model: { value: 'default', options: [] },

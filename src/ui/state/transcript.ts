@@ -84,6 +84,16 @@ export function withUserMessage(state: Transcript, text: string, attachments: At
   }
 }
 
+/** Drop the pending `!` context once a prompt has carried it. */
+export function clearContext(state: Transcript): Transcript {
+  return { ...state, context: [] }
+}
+
+/** Drop one pending `!` result the user removed from the composer. */
+export function removeContext(state: Transcript, index: number): Transcript {
+  return { ...state, context: state.context.filter((_, at) => at !== index) }
+}
+
 /** A freshly forked/edited turn: cleared view, same agent capabilities. */
 export function reset(state: Transcript): Transcript {
   return { ...empty(), capabilities: state.capabilities }
@@ -289,6 +299,22 @@ export function applyEvent(state: Transcript, event: UiEvent): Transcript {
 
     case 'queue':
       return { ...state, queued: event.pending }
+
+    case 'context':
+      return {
+        ...state,
+        items: [
+          ...state.items,
+          {
+            id: nextId(),
+            kind: 'context',
+            mention: event.mention,
+            status: event.status,
+            ...(event.lines ? { lines: event.lines } : {}),
+            ...(event.reason !== undefined ? { reason: event.reason } : {}),
+          },
+        ],
+      }
 
     case 'session.reset':
       return reset(state)

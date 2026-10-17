@@ -169,4 +169,71 @@ describe('App', () => {
       ;(globalThis as { WebSocket: unknown }).WebSocket = original
     }
   })
+
+  // Shell routing: `!` and `!!` never become a prompt, and `!` output rides the next one.
+  const withSocket = async (run: (socket: FakeSocket, host: HTMLElement) => Promise<void>) => {
+    const original = globalThis.WebSocket
+    ;(globalThis as { WebSocket: unknown }).WebSocket = FakeSocket
+    FakeSocket.last = undefined
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    try {
+      render(<App coreUrl="ws://127.0.0.1:9/ws" />, host)
+      await tick()
+      const socket = await waitForSocket()
+      expect(socket).toBeDefined()
+      await run(socket!, host)
+    } finally {
+      render(null, host)
+      host.remove()
+      ;(globalThis as { WebSocket: unknown }).WebSocket = original
+    }
+  }
+
+  const sendDraft = async (host: HTMLElement, text: string) => {
+    const input = host.querySelector('input[data-atom="input"]') as HTMLInputElement
+    input.value = text
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    await tick()
+    return input
+  }
+
+  it('routes ! to the shell message', async () => {
+    await withSocket(async (socket, host) => {
+      const input = await sendDraft(host, '!ls')
+      expect(socket.sent).toContainEqual({ type: 'shell', command: 'ls', includeInContext: true })
+      expect(socket.sent.some((m) => (m as { type?: string }).type === 'prompt')).toBe(false)
+      expect(input.value).toBe('')
+    })
+  })
+
+  it('routes !! with the context flag off', async () => {
+    await withSocket(async (socket, host) => {
+      await sendDraft(host, '!! secret')
+      expect(socket.sent).toContainEqual({ type: 'shell', command: 'secret', includeInContext: false })
+    })
+  })
+
+  it('sends captured context with the next prompt only', async () => {
+    await withSocket(async (socket, host) => {
+      socket.onmessage?.({ data: JSON.stringify({ type: 'event', event: { type: 'turn.started' } }) })
+      await tick()
+      socket.onmessage?.({
+        data: JSON.stringify({ type: 'event', event: { type: 'tool', toolCallId: 's1', title: '!ls', status: 'in_progress', origin: 'shell', includeInContext: true } }),
+      })
+      socket.onmessage?.({
+        data: JSON.stringify({ type: 'event', event: { type: 'tool', toolCallId: 's1', status: 'completed', origin: 'shell', includeInContext: true, outputDelta: 'SECRET-OUT', exitCode: 0 } }),
+      })
+      await tick()
+
+      await sendDraft(host, 'what is in it?')
+      const first = socket.sent.find((m) => (m as { text?: string }).text === 'what is in it?') as { context?: { text: string }[] }
+      expect(first.context?.map((entry) => entry.text)).toEqual(['SECRET-OUT'])
+
+      await sendDraft(host, 'and now?')
+      const second = socket.sent.find((m) => (m as { text?: string }).text === 'and now?') as Record<string, unknown>
+      expect(second).toBeDefined()
+      expect(second.context === undefined || (second.context as unknown[]).length === 0).toBe(true)
+    })
+  })
 })

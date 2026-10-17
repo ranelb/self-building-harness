@@ -7,8 +7,10 @@ import { applyTheme, loadTheme } from './ui/theme/apply.ts'
 import { connectStream, type Stream } from './ui/state/stream.ts'
 import {
   applyEvent,
+  clearContext,
   empty,
   markSuperseded,
+  removeContext,
   resolvePermission,
   toMessages,
   withUserMessage,
@@ -17,6 +19,7 @@ import {
 import { getLive, renderInto, setLive, type HostState, type RenderContext, type SessionSummary, type UiNode } from './ui/tree/render.ts'
 import { DEFAULT_LAYOUT } from '../shared/layout.ts'
 import type { Attachment } from '../shared/protocol.ts'
+import { parseShellCommand } from '../shared/mentions.ts'
 
 const DEFAULT_CORE_URL =
   (globalThis as { __SBH_CORE_URL__?: string }).__SBH_CORE_URL__ ??
@@ -57,6 +60,9 @@ export interface AppProps {
 
 export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
   const [transcript, setTranscript] = useState<Transcript>(empty)
+  // The dispatch closure is bound at the last composer update, so it can be stale; read the latest state here.
+  const latestTranscript = useRef(transcript)
+  latestTranscript.current = transcript
   const [draft, setDraft] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [components, setComponents] = useState<LoadReport | null>(null)
@@ -182,6 +188,7 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
     changedFiles: transcript.changedFiles,
     commands: transcript.commands,
     draftAttachments: attachments,
+    pendingContext: transcript.context,
     capabilities: transcript.capabilities,
     status: transcript.status,
     queued: transcript.queued,
@@ -230,6 +237,10 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
           return
         }
 
+        case 'context.remove':
+          setTranscript((previous) => removeContext(previous, Number(props?.index)))
+          return
+
         case 'turn.cancel':
           stream.current?.send({ type: 'cancel' })
           return
@@ -268,6 +279,14 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
           const text = (live?.value ?? draft).trim()
           const outgoing = attachments
           if (!text && outgoing.length === 0) return
+          // `!` and `!!` are shell commands run by the core, never prompts. Attachments stay staged.
+          const shell = parseShellCommand(text)
+          if (shell) {
+            stream.current?.send({ type: 'shell', command: shell.command, includeInContext: shell.includeInContext })
+            if (live) live.value = ''
+            setDraft('')
+            return
+          }
           const steer = props?.steer === true
           // An edit becomes a real branch only when the backend forks and the
           // edit is the last user turn; otherwise it is a resend (dimmed above).
@@ -278,12 +297,19 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
             if (lastUser?.id === editing) stream.current?.send({ type: 'session.fork' })
           }
           setTranscript((previous) => withUserMessage(previous, text, outgoing))
+          // The pending `!` results ride this prompt only; they are cleared once it is sent.
+          const carried = latestTranscript.current.context
           stream.current?.send({
             type: 'prompt',
             text,
             ...(outgoing.length > 0 ? { attachments: outgoing } : {}),
             ...(steer ? { steer: true } : {}),
+            ...(carried.length > 0 ? { context: carried } : {}),
           })
+          if (carried.length > 0) {
+            latestTranscript.current = clearContext(latestTranscript.current)
+            setTranscript((previous) => clearContext(previous))
+          }
           if (live) live.value = ''
           setDraft('')
           setAttachments([])

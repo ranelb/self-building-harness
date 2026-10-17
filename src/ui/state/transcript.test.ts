@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { applyEvent, empty, markSuperseded, resolvePermission, toMessages, withUserMessage } from './transcript.ts'
+import { applyEvent, clearContext, empty, markSuperseded, resolvePermission, toMessages, withUserMessage } from './transcript.ts'
 import type { UiEvent } from '../../../shared/protocol.ts'
 
 const apply = (events: UiEvent[], start = empty()) => events.reduce(applyEvent, start)
@@ -286,5 +286,23 @@ describe('shell tool output', () => {
     const state = apply([shell({ outputDelta: 'hi\n' }), shell({ status: 'completed', exitCode: 0 })])
     expect(state.context).toHaveLength(1)
     expect(applyEvent(state, { type: 'session.reset', reason: 'new' }).context).toEqual([])
+  })
+})
+
+describe('composer context', () => {
+  it('inserts a context row', () => {
+    const state = applyEvent(empty(), {
+      type: 'context',
+      mention: '@a.ts:1-3',
+      status: 'included',
+      lines: { start: 1, end: 3 },
+    })
+    const item = state.items[state.items.length - 1]
+    expect(item).toMatchObject({ kind: 'context', mention: '@a.ts:1-3', status: 'included', lines: { start: 1, end: 3 } })
+  })
+
+  it('clearContext empties the pending context', () => {
+    const state = { ...empty(), context: [{ label: '!ls', text: 'a' }] }
+    expect(clearContext(state).context).toEqual([])
   })
 })
