@@ -669,3 +669,30 @@ describe('file routes', () => {
     expect(res.status).toBe(403)
   })
 })
+
+describe('core server: @path:lines mentions', () => {
+  let tree: TempTree
+
+  afterEach(async () => {
+    await tree?.cleanup()
+  })
+
+  it("'@a.txt:1-2' is resolved in the core: a context event, and the text reaches the agent unchanged", async () => {
+    tree = await makeTempTree()
+    core = await startCore({ port: 0, backend: 'fake:happy', cwd: tree.root })
+    const ws = new WebSocket(`ws://127.0.0.1:${core.port}/ws`)
+    const messages: any[] = []
+    await once(ws, 'open')
+    ws.on('message', (data) => messages.push(JSON.parse(String(data))))
+    ws.send(JSON.stringify({ type: 'prompt', text: 'read @a.txt:1-2 please' }))
+
+    await waitFor(() => messages.some((m) => m.event?.type === 'turn.finished'))
+    const context = messages.filter((m) => m.event?.type === 'context').map((m) => m.event)
+    expect(context).toEqual([
+      { type: 'context', mention: '@a.txt:1-2', status: 'included', lines: { start: 1, end: 2 } },
+    ])
+    const text = messages.filter((m) => m.event?.type === 'chunk').map((m) => m.event.text).join('')
+    expect(text).toContain('read @a.txt:1-2 please')
+    ws.close()
+  })
+})

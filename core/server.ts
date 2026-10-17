@@ -45,6 +45,7 @@ import {
   ROOT_MANIFEST,
 } from './capabilities.ts'
 import { isOriginAllowed, resolveAllowedOrigins } from './origin.ts'
+import { expandMentions } from './mentions.ts'
 import type { PermissionRequest, SessionConfigOption, UiEvent } from '../shared/protocol.ts'
 
 /**
@@ -677,10 +678,19 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
             // Capabilities arrive with `initialize`; wait for it so an image is not
             // downgraded to a file link just because the handshake had not resolved.
             await live.ready()
+            // Mentions resolve against the session cwd, after capabilities are known and
+            // before the prompt leaves; the text itself is shipped untouched.
+            const mentions = await expandMentions({
+              text: msg.text,
+              root: resumeTarget?.cwd ?? cwd,
+              roots: await knownRoots(),
+              caps: { embeddedContext: live.capabilities().embeddedContext },
+            })
+            for (const event of mentions.events) broadcast(event)
             const blocks = await attachmentBlocks(join(attachmentsBase, randomUUID()), attachments, {
               image: live.capabilities().image,
             })
-            await live.prompt(msg.text, blocks, { steer: msg.steer === true })
+            await live.prompt(msg.text, [...mentions.blocks, ...blocks], { steer: msg.steer === true })
           } catch (error) {
             broadcast({ type: 'error', message: (error as Error).message })
           }

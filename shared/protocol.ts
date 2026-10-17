@@ -56,6 +56,17 @@ export type UiEvent =
     }
   /** A replayed user attachment (non-text content block). */
   | { type: 'attachment'; mimeType: string; name?: string; data?: string; uri?: string }
+  /**
+   * The outcome of one `@path:lines` mention, broadcast in text order so every client
+   * sees what the agent was (or was not) sent. `reason` is the refusal, when skipped.
+   */
+  | {
+      type: 'context'
+      mention: string
+      status: 'included' | 'skipped'
+      lines?: { start: number; end: number }
+      reason?: string
+    }
   | {
       type: 'permission.requested'
       requestId: string
