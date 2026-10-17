@@ -14,7 +14,7 @@ const tool = (over: Partial<Extract<UiEvent, { type: 'tool' }>> = {}): UiEvent =
 describe('timeline', () => {
   it('coalesces consecutive agent chunks into one item', () => {
     const state = apply([
-      { type: 'turn.started' },
+      { type: 'turn.started', turnId: 1 },
       { type: 'chunk', text: 'he' },
       { type: 'chunk', text: 'llo' },
     ])
@@ -24,14 +24,32 @@ describe('timeline', () => {
 
   it('starts a new agent item after a turn finishes', () => {
     const state = apply([
-      { type: 'turn.started' },
+      { type: 'turn.started', turnId: 1 },
       { type: 'chunk', text: 'a' },
-      { type: 'turn.finished', stopReason: 'end_turn' },
-      { type: 'turn.started' },
+      { type: 'turn.finished', turnId: 1, stopReason: 'end_turn' },
+      { type: 'turn.started', turnId: 2 },
       { type: 'chunk', text: 'b' },
     ])
     expect(state.items.map((item) => item.kind)).toEqual(['agent', 'agent'])
     expect((state.items[1] as { text: string }).text).toBe('b')
+  })
+
+  it('ignores a turn.finished that does not belong to the live turn', () => {
+    const state = apply([
+      { type: 'turn.started', turnId: 1 },
+      { type: 'turn.started', turnId: 2 },
+      { type: 'turn.finished', turnId: 1, stopReason: 'cancelled' },
+    ])
+    expect(state.status).toBe('streaming')
+  })
+
+  it('goes idle when the live turn finishes', () => {
+    const state = apply([
+      { type: 'turn.started', turnId: 1 },
+      { type: 'turn.started', turnId: 2 },
+      { type: 'turn.finished', turnId: 2, stopReason: 'end_turn' },
+    ])
+    expect(state.status).toBe('idle')
   })
 
   it('appends a live user message and keeps its attachments', () => {
@@ -44,7 +62,7 @@ describe('timeline', () => {
 
   it('interleaves thought, agent text and tool calls in order', () => {
     const state = apply([
-      { type: 'turn.started' },
+      { type: 'turn.started', turnId: 1 },
       { type: 'thought', text: 'why' },
       { type: 'chunk', text: 'answer' },
       tool({ kind: 'edit' }),
@@ -54,7 +72,7 @@ describe('timeline', () => {
 
   it('merges a tool update by id rather than appending', () => {
     const state = apply([
-      { type: 'turn.started' },
+      { type: 'turn.started', turnId: 1 },
       tool({ kind: 'edit', status: 'pending' }),
       tool({ title: 'tool', status: 'completed' }),
     ])
@@ -67,11 +85,11 @@ describe('timeline', () => {
 
   it('records changed files per turn for edit tools only', () => {
     const state = apply([
-      { type: 'turn.started' },
+      { type: 'turn.started', turnId: 1 },
       tool({ toolCallId: 't1', kind: 'edit', locations: [{ path: 'a.ts' }] }),
       tool({ toolCallId: 't2', kind: 'execute', locations: [{ path: 'ignored.ts' }] }),
-      { type: 'turn.finished', stopReason: 'end_turn' },
-      { type: 'turn.started' },
+      { type: 'turn.finished', turnId: 1, stopReason: 'end_turn' },
+      { type: 'turn.started', turnId: 2 },
       tool({ toolCallId: 't3', kind: 'edit', locations: [{ path: 'b.ts' }, { path: 'a.ts' }] }),
     ])
     expect(state.changedFiles).toEqual([
@@ -83,7 +101,7 @@ describe('timeline', () => {
   it('session.reset clears the timeline but keeps capabilities', () => {
     const started = apply([
       { type: 'capabilities', image: true, audio: false, embeddedContext: false, fork: false },
-      { type: 'turn.started' },
+      { type: 'turn.started', turnId: 1 },
       { type: 'chunk', text: 'hi' },
     ])
     const state = applyEvent(started, { type: 'session.reset', reason: 'new' })
@@ -121,7 +139,7 @@ describe('toMessages', () => {
   it('maps user and agent items, dropping thoughts and tools', () => {
     const state = apply([
       { type: 'user.chunk', text: 'q' },
-      { type: 'turn.started' },
+      { type: 'turn.started', turnId: 1 },
       { type: 'thought', text: 'x' },
       { type: 'chunk', text: 'a' },
       tool({}),

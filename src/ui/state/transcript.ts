@@ -29,6 +29,8 @@ export interface Transcript {
   turn: number
   /** The turn that produced the currently-open agent item (internal). */
   agentTurn?: number
+  /** The core's id for the turn currently streaming (internal). */
+  liveTurn?: number
 }
 
 const noCapabilities = (): AgentCapabilities => ({
@@ -106,7 +108,13 @@ const makeTool = (event: Extract<UiEvent, { type: 'tool' }>): TimelineItem => ({
 export function applyEvent(state: Transcript, event: UiEvent): Transcript {
   switch (event.type) {
     case 'turn.started':
-      return { ...state, status: 'streaming', error: undefined, turn: state.turn + 1 }
+      return {
+        ...state,
+        status: 'streaming',
+        error: undefined,
+        turn: state.turn + 1,
+        liveTurn: event.turnId,
+      }
 
     case 'chunk': {
       const last = state.items[state.items.length - 1]
@@ -224,6 +232,9 @@ export function applyEvent(state: Transcript, event: UiEvent): Transcript {
       return { ...state, commands: event.commands }
 
     case 'turn.finished':
+      // A settlement from a turn that is no longer the live one must not flip the
+      // composer back to idle while a newer turn streams.
+      if (event.turnId !== state.liveTurn) return state
       return { ...state, status: 'idle' }
 
     case 'error':

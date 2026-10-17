@@ -78,8 +78,12 @@ export type UiEvent =
       decision: 'allow' | 'deny'
       reason: string
     }
-  | { type: 'turn.started' }
-  | { type: 'turn.finished'; stopReason: string }
+  /**
+   * A turn's identity. Monotonic across the whole core process, never reused, so
+   * a settlement that arrives after a later turn began can be recognised as stale.
+   */
+  | { type: 'turn.started'; turnId: number }
+  | { type: 'turn.finished'; turnId: number; stopReason: string }
   | { type: 'session.reset'; reason: 'new' | 'fork' | 'resume' }
   /** The agent's slash commands (skills, builtins), for the composer's `/` menu. */
   | { type: 'commands'; commands: AvailableCommand[] }

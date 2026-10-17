@@ -181,6 +181,21 @@ describe('connectAcp', () => {
   })
 })
 
+describe('turn control', () => {
+  it('pairs every turn.finished with its turn.started, in increasing order', async () => {
+    const conn = connectAcp(fake('happy'))
+    const events = collect(conn)
+    await conn.prompt('one')
+    await conn.prompt('two')
+    const started = events.filter((e): e is Extract<UiEvent, { type: 'turn.started' }> => e.type === 'turn.started')
+    const finished = events.filter((e): e is Extract<UiEvent, { type: 'turn.finished' }> => e.type === 'turn.finished')
+    expect(started).toHaveLength(2)
+    expect(finished.map((e) => e.turnId)).toEqual(started.map((e) => e.turnId))
+    expect(started[1]!.turnId).toBeGreaterThan(started[0]!.turnId)
+    conn.close()
+  })
+})
+
 describe('closing', () => {
   it('does not emit an error when the core closes an in-flight handshake', async () => {
     // A process that never answers ACP, so `open()` has a request in flight.

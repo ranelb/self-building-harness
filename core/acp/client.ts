@@ -138,6 +138,14 @@ export function readConfigOptions(raw: unknown): SessionConfigOption[] {
   return options
 }
 
+/**
+ * Turn ids are process-wide, not per connection. A replaced connection can still
+ * deliver a settlement after the next one has started a turn; a counter that
+ * restarted at 1 would make those two ids equal and the reducer could not tell
+ * them apart. A process-wide counter cannot collide.
+ */
+let turnSequence = 0
+
 export function connectAcp(opts: ConnectOptions): AcpConnection {
   const child = spawn(opts.command, opts.args, {
     cwd: opts.cwd,
@@ -289,7 +297,8 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
         // A load replays the conversation as session updates. Wrap it in a turn so
         // clients do not sit in `streaming` forever (Send stuck as Stop) and a
         // deferred-markdown transcript still gets a boundary to finalize on.
-        emit({ type: 'turn.started' })
+        const resumeTurn = ++turnSequence
+        emit({ type: 'turn.started', turnId: resumeTurn })
         const loaded = await request('session/load', {
           sessionId: opts.resume.sessionId,
           cwd: opts.resume.cwd ?? opts.cwd,
@@ -297,7 +306,7 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
         })
         sessionId = opts.resume.sessionId
         emitConfig(loaded?.result?.configOptions)
-        emit({ type: 'turn.finished', stopReason: 'end_turn' })
+        emit({ type: 'turn.finished', turnId: resumeTurn, stopReason: 'end_turn' })
         return
       }
       // `mcpServers` is required by NewSessionRequest alongside `cwd`, not optional.
@@ -317,13 +326,14 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
     async prompt(text, extra = []) {
       await ensureSession()
       if (handshakeError) return
-      emit({ type: 'turn.started' })
+      const turnId = ++turnSequence
+      emit({ type: 'turn.started', turnId })
       try {
         const res = await request('session/prompt', {
           sessionId,
           prompt: [{ type: 'text', text }, ...extra],
         })
-        emit({ type: 'turn.finished', stopReason: res?.result?.stopReason ?? 'end_turn' })
+        emit({ type: 'turn.finished', turnId, stopReason: res?.result?.stopReason ?? 'end_turn' })
       } catch (err) {
         if (!closing) emit({ type: 'error', message: (err as Error).message })
       }
