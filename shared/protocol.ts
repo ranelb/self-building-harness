@@ -114,7 +114,8 @@ export interface AgentCapabilities {
 
 /** Client -> core. */
 export type ClientToCore =
-  | { type: 'prompt'; text: string; attachments?: Attachment[] }
+  /** `steer`: cancel the in-flight turn and run this prompt next, ahead of follow-ups. */
+  | { type: 'prompt'; text: string; attachments?: Attachment[]; steer?: boolean }
   | { type: 'cancel' }
   | { type: 'session.new' }
   | { type: 'session.fork'; id?: string }

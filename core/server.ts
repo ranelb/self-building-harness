@@ -679,7 +679,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
             const blocks = await attachmentBlocks(join(attachmentsBase, randomUUID()), attachments, {
               image: live.capabilities().image,
             })
-            await live.prompt(msg.text, blocks)
+            await live.prompt(msg.text, blocks, { steer: msg.steer === true })
           } catch (error) {
             broadcast({ type: 'error', message: (error as Error).message })
           }

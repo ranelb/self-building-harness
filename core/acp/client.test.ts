@@ -182,6 +182,46 @@ describe('connectAcp', () => {
 })
 
 describe('turn control', () => {
+  const waitUntil = async (predicate: () => boolean) => {
+    const started = Date.now()
+    while (!predicate()) {
+      if (Date.now() - started > 5000) throw new Error('timed out')
+      await new Promise((r) => setTimeout(r, 10))
+    }
+  }
+
+  it('steers: cancels the in-flight turn and jumps the queue', async () => {
+    const conn = connectAcp(fake('steer'))
+    const events = collect(conn)
+    const slow = conn.prompt('slow')
+    await waitUntil(() => events.some((e) => e.type === 'chunk'))
+    const started = Date.now()
+    await conn.prompt('redirect', [], { steer: true })
+    // The fixture holds the first turn for 3s; a steer that waited would take that long.
+    expect(Date.now() - started).toBeLessThan(2000)
+    await slow
+    const finished = events.filter((e) => e.type === 'turn.finished') as { stopReason: string }[]
+    expect(finished[0]?.stopReason).toBe('cancelled')
+    const text = events.filter((e) => e.type === 'chunk').map((e) => (e as { text: string }).text).join('')
+    expect(text).toContain('echo redirect')
+    expect(events.filter((e) => e.type === 'error')).toEqual([])
+    conn.close()
+  })
+
+  it('keeps a steer ahead of an earlier follow-up', async () => {
+    const conn = connectAcp(fake('steer'))
+    const events = collect(conn)
+    const slow = conn.prompt('slow')
+    await waitUntil(() => events.some((e) => e.type === 'chunk'))
+    const later = conn.prompt('later')
+    const now = conn.prompt('now', [], { steer: true })
+    await Promise.all([slow, later, now])
+    const text = events.filter((e) => e.type === 'chunk').map((e) => (e as { text: string }).text).join('')
+    expect(text.indexOf('echo now')).toBeGreaterThanOrEqual(0)
+    expect(text.indexOf('echo now')).toBeLessThan(text.indexOf('echo later'))
+    conn.close()
+  })
+
   it('runs a second prompt after the first finishes, not concurrently', async () => {
     const conn = connectAcp(fake('queue-turn'))
     const events = collect(conn)

@@ -163,6 +163,23 @@ describe('core server', () => {
     ws.close()
   })
 
+  it('a steer prompt cancels the in-flight turn and runs next', async () => {
+    core = await startCore({ port: 0, backend: 'fake:steer' })
+    const ws = new WebSocket(`ws://127.0.0.1:${core.port}/ws`)
+    const messages: any[] = []
+    await once(ws, 'open')
+    ws.on('message', (data) => messages.push(JSON.parse(String(data))))
+    ws.send(JSON.stringify({ type: 'prompt', text: 'slow' }))
+    await waitFor(() => messages.some((m) => m.event?.type === 'chunk'))
+    ws.send(JSON.stringify({ type: 'prompt', text: 'redirect', steer: true }))
+    await waitFor(() => messages.filter((m) => m.event?.type === 'turn.finished').length === 2)
+    const finished = messages.filter((m) => m.event?.type === 'turn.finished')
+    expect(finished[0].event.stopReason).toBe('cancelled')
+    const text = messages.filter((m) => m.event?.type === 'chunk').map((m) => m.event.text).join('')
+    expect(text).toContain('echo redirect')
+    ws.close()
+  })
+
   it('session.new starts a fresh session and broadcasts session.reset', async () => {
     core = await startCore({ port: 0, backend: 'fake:happy' })
     const ws = new WebSocket(`ws://127.0.0.1:${core.port}/ws`)

@@ -26,7 +26,7 @@ export interface AcpSessionInfo {
 
 export interface AcpConnection {
   /** Send a prompt; resolves when the turn settles (finished or errored). */
-  prompt(text: string, extra?: AcpContentBlock[]): Promise<void>
+  prompt(text: string, extra?: AcpContentBlock[], options?: PromptOptions): Promise<void>
   /** Answer an inbound permission request by its UI-facing id. */
   respondPermission(requestId: string, decision: 'allow' | 'deny'): Promise<void>
   /** Subscribe to UI events. Multiple subscribers are allowed. */
@@ -48,6 +48,11 @@ export interface AcpConnection {
   /** The current ACP session id, once a session exists. */
   currentSessionId(): string | null
   close(): void
+}
+
+export interface PromptOptions {
+  /** Cancel the in-flight turn and run this prompt next, ahead of queued follow-ups. */
+  steer?: boolean
 }
 
 export interface ConnectOptions {
@@ -73,6 +78,7 @@ interface PermissionOption {
 interface QueuedPrompt {
   text: string
   extra: AcpContentBlock[]
+  steer: boolean
   resolve: () => void
 }
 
@@ -355,7 +361,14 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
   }
 
   const enqueue = (entry: QueuedPrompt) => {
-    queued.push(entry)
+    if (!entry.steer) {
+      queued.push(entry)
+      return
+    }
+    // Steers keep their arrival order among themselves and stay ahead of follow-ups.
+    const at = queued.findIndex((waiting) => !waiting.steer)
+    if (at < 0) queued.push(entry)
+    else queued.splice(at, 0, entry)
   }
 
   return {
@@ -363,11 +376,16 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
       listeners.push(cb)
     },
 
-    async prompt(text, extra = []) {
+    async prompt(text, extra = [], options = {}) {
       await ensureSession()
       if (handshakeError) return
+      const steer = options.steer === true
       return new Promise<void>((resolve) => {
-        enqueue({ text, extra, resolve })
+        enqueue({ text, extra, steer, resolve })
+        if (steer && inFlight) {
+          // A notification naming the session, not a turn: ACP cannot scope it further.
+          send({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId } })
+        }
         void drain()
       })
     },

@@ -21,6 +21,7 @@ export const SCENARIOS = [
   'split-multibyte',
   'cancel',
   'queue-turn',
+  'steer',
 ] as const
 
 export type Scenario = (typeof SCENARIOS)[number]
@@ -169,6 +170,25 @@ async function serve(scenario: Scenario): Promise<void> {
   let resolveCancel: (() => void) | null = null
   /** A real agent runs one turn at a time; the guard makes a missing queue fail loudly. */
   let promptInFlight = false
+  /** The steer scenario holds only its first turn; later turns echo at once. */
+  let steerHeld = false
+
+  /** Resolves true on a cancel, or false after `ms`. Without `ms` it waits for a cancel. */
+  const waitCancel = (ms?: number): Promise<boolean> =>
+    new Promise((resolve) => {
+      if (ms === undefined) {
+        resolveCancel = () => resolve(true)
+        return
+      }
+      const timer = setTimeout(() => {
+        resolveCancel = null
+        resolve(false)
+      }, ms)
+      resolveCancel = () => {
+        clearTimeout(timer)
+        resolve(true)
+      }
+    })
 
   const sendRequest = (method: string, params: unknown): Promise<any> => {
     const id = nextId++
@@ -290,6 +310,24 @@ async function serve(scenario: Scenario): Promise<void> {
   }
 
   async function answerPrompt(msg: any): Promise<void> {
+        if (scenario === 'steer') {
+          const say = (text: string) =>
+            write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: SESSION_ID, update: chunkUpdate(text) } })
+          if (steerHeld) {
+            say(`echo ${textOf(msg.params)}`)
+            if (msg.id !== undefined) write({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
+            return
+          }
+          steerHeld = true
+          say('slow ')
+          // Hold for 3s so a steer that waits for the turn fails the elapsed-time check.
+          const cancelled = await waitCancel(3000)
+          say(cancelled ? 'interrupted' : 'finished')
+          if (msg.id !== undefined) {
+            write({ jsonrpc: '2.0', id: msg.id, result: { stopReason: cancelled ? 'cancelled' : 'end_turn' } })
+          }
+          return
+        }
         if (scenario === 'cancel') {
           // Block until the client cancels, so a cancel that never reaches the
           // agent cannot pass by accident.
