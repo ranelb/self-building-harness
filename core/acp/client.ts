@@ -69,6 +69,13 @@ interface PermissionOption {
   kind?: string
 }
 
+/** A prompt waiting for its turn. `resolve` fires when the turn settles or the entry is dropped. */
+interface QueuedPrompt {
+  text: string
+  extra: AcpContentBlock[]
+  resolve: () => void
+}
+
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
 
@@ -170,6 +177,9 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
   const pending = new Map<number, Pending>()
   /** UI-facing request id -> the JSON-RPC id and the options the agent offered. */
   const permissionRequests = new Map<string, { id: unknown; options: PermissionOption[] }>()
+  /** One `session/prompt` in flight per connection, ever. `drain()` is its only writer. */
+  let inFlight = false
+  const queued: QueuedPrompt[] = []
 
   const send = (obj: unknown) => {
     if (closed) return
@@ -318,6 +328,36 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
     return sessionReady
   }
 
+  /**
+   * Runs the next queued prompt. The only writer of `inFlight` and the only emitter
+   * of `turn.started` / `turn.finished`. `inFlight` is set before the first await.
+   */
+  const drain = async (): Promise<void> => {
+    if (inFlight) return // re-entrant call from a settling turn
+    const next = queued.shift()
+    if (!next) return
+    inFlight = true
+    const turnId = ++turnSequence
+    emit({ type: 'turn.started', turnId })
+    try {
+      const res = await request('session/prompt', {
+        sessionId,
+        prompt: [{ type: 'text', text: next.text }, ...next.extra],
+      })
+      emit({ type: 'turn.finished', turnId, stopReason: res?.result?.stopReason ?? 'end_turn' })
+    } catch (err) {
+      if (!closing) emit({ type: 'error', message: (err as Error).message })
+    } finally {
+      inFlight = false
+      next.resolve()
+      void drain()
+    }
+  }
+
+  const enqueue = (entry: QueuedPrompt) => {
+    queued.push(entry)
+  }
+
   return {
     onEvent(cb) {
       listeners.push(cb)
@@ -326,17 +366,10 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
     async prompt(text, extra = []) {
       await ensureSession()
       if (handshakeError) return
-      const turnId = ++turnSequence
-      emit({ type: 'turn.started', turnId })
-      try {
-        const res = await request('session/prompt', {
-          sessionId,
-          prompt: [{ type: 'text', text }, ...extra],
-        })
-        emit({ type: 'turn.finished', turnId, stopReason: res?.result?.stopReason ?? 'end_turn' })
-      } catch (err) {
-        if (!closing) emit({ type: 'error', message: (err as Error).message })
-      }
+      return new Promise<void>((resolve) => {
+        enqueue({ text, extra, resolve })
+        void drain()
+      })
     },
 
     async list(cursor) {
@@ -365,7 +398,8 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
 
     async cancel() {
       // A notification, not a request: ACP answers the original session/prompt
-      // with stopReason `cancelled`. A no-op before the session exists.
+      // with stopReason `cancelled`. A no-op before the session exists. It cancels
+      // the in-flight turn only; the queue keeps running.
       if (!sessionId) return
       send({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId } })
     },
@@ -409,6 +443,8 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
     close() {
       closing = true
       closed = true
+      // Settle every waiting prompt; the in-flight one settles when the child dies.
+      queued.splice(0).forEach((entry) => entry.resolve())
       try {
         child.kill()
       } catch {

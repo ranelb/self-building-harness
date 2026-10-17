@@ -182,6 +182,17 @@ describe('connectAcp', () => {
 })
 
 describe('turn control', () => {
+  it('runs a second prompt after the first finishes, not concurrently', async () => {
+    const conn = connectAcp(fake('queue-turn'))
+    const events = collect(conn)
+    await Promise.all([conn.prompt('one'), conn.prompt('two')])
+    expect(events.filter((e) => e.type === 'error')).toEqual([])
+    expect(events.filter((e) => e.type === 'turn.started')).toHaveLength(2)
+    const text = events.filter((e) => e.type === 'chunk').map((e) => (e as { text: string }).text).join('')
+    expect(text.indexOf('end one')).toBeLessThan(text.indexOf('start two'))
+    conn.close()
+  })
+
   it('pairs every turn.finished with its turn.started, in increasing order', async () => {
     const conn = connectAcp(fake('happy'))
     const events = collect(conn)

@@ -20,6 +20,7 @@ export const SCENARIOS = [
   'crash-mid-turn',
   'split-multibyte',
   'cancel',
+  'queue-turn',
 ] as const
 
 export type Scenario = (typeof SCENARIOS)[number]
@@ -131,6 +132,13 @@ async function runScenario(
       await delay(10)
       process.exit(1)
 
+    case 'queue-turn':
+      // Holds the turn long enough that a second prompt sent meanwhile would overlap.
+      chunk(`start ${prompt} `)
+      await delay(300)
+      chunk(`end ${prompt}`)
+      return
+
     case 'split-multibyte': {
       // Emit an update whose text contains an astral character, then write the
       // line's bytes split *inside* that character on purpose.
@@ -159,6 +167,8 @@ async function serve(scenario: Scenario): Promise<void> {
   const pending = new Map<number, (msg: any) => void>()
   let cancelRequested = false
   let resolveCancel: (() => void) | null = null
+  /** A real agent runs one turn at a time; the guard makes a missing queue fail loudly. */
+  let promptInFlight = false
 
   const sendRequest = (method: string, params: unknown): Promise<any> => {
     const id = nextId++
@@ -253,7 +263,33 @@ async function serve(scenario: Scenario): Promise<void> {
         return
       }
 
-      case 'session/prompt':
+      case 'session/prompt': {
+        if (promptInFlight) {
+          // Reject, never tolerate: a client that sends a second prompt while one is
+          // unresolved must fail the test, not interleave silently.
+          if (msg.id !== undefined) {
+            write({ jsonrpc: '2.0', id: msg.id, error: { code: -32000, message: 'concurrent prompt' } })
+          }
+          return
+        }
+        promptInFlight = true
+        try {
+          await answerPrompt(msg)
+        } finally {
+          promptInFlight = false
+        }
+        return
+      }
+
+      case 'session/cancel':
+        cancelRequested = true
+        resolveCancel?.()
+        resolveCancel = null
+        return
+    }
+  }
+
+  async function answerPrompt(msg: any): Promise<void> {
         if (scenario === 'cancel') {
           // Block until the client cancels, so a cancel that never reaches the
           // agent cannot pass by accident.
@@ -281,14 +317,6 @@ async function serve(scenario: Scenario): Promise<void> {
         if (msg.id !== undefined) {
           write({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
         }
-        return
-
-      case 'session/cancel':
-        cancelRequested = true
-        resolveCancel?.()
-        resolveCancel = null
-        return
-    }
   }
 
   // Byte-safe line splitting: never decode a chunk that may end mid-character.
