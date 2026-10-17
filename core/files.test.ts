@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { basename, join } from 'node:path'
 import { writeFile } from 'node:fs/promises'
-import { canonicalRoots, confine, FileAccessError, listTree, maxFileBytes, readText } from './files.ts'
+import { makeTempRepo, git as gitRun, type TempRepo } from '../test/fixtures/files-fixture.ts'
+import { canonicalRoots, confine, FileAccessError, gitStatus, listTree, maxFileBytes, readText } from './files.ts'
 import { makeTempTree, type TempTree } from '../test/fixtures/files-fixture.ts'
 
 /** The reason a promise rejects with, or 'ok' if it resolves. */
@@ -200,5 +201,78 @@ describe('readText', () => {
   it('refuses a symlink whose target is outside the root', async () => {
     const roots = await canonicalRoots([tree.root])
     expect(await reasonOf(readText(roots, tree.root, 'link-out'))).toBe('escapes-root')
+  })
+})
+
+describe('gitStatus', () => {
+  let repo: TempRepo
+
+  beforeEach(async () => {
+    repo = await makeTempRepo()
+  })
+  afterEach(async () => {
+    await repo.cleanup()
+  })
+
+  it('reports a work-tree modification with the leading space intact', async () => {
+    const roots = await canonicalRoots([repo.root])
+    const got = await gitStatus(roots, repo.root)
+    expect(got.git).toBe(true)
+    expect(got.changes).toContainEqual({ path: 'a.txt', index: ' ', worktree: 'M' })
+  })
+
+  it('reports an untracked file', async () => {
+    const roots = await canonicalRoots([repo.root])
+    const got = await gitStatus(roots, repo.root)
+    expect(got.changes).toContainEqual(expect.objectContaining({ path: 'new.txt', index: '?' }))
+  })
+
+  it('reports a staged change', async () => {
+    await gitRun(repo.root, ['add', 'a.txt'])
+    const roots = await canonicalRoots([repo.root])
+    const got = await gitStatus(roots, repo.root)
+    expect(got.changes).toContainEqual({ path: 'a.txt', index: 'M', worktree: ' ' })
+  })
+
+  it('reports a rename with its origin path', async () => {
+    await gitRun(repo.root, ['mv', 'sub/x.ts', 'sub/y.ts'])
+    const roots = await canonicalRoots([repo.root])
+    const got = await gitStatus(roots, repo.root)
+    expect(got.changes).toContainEqual(
+      expect.objectContaining({ path: 'sub/y.ts', index: 'R', originPath: 'sub/x.ts' })
+    )
+  })
+
+  it('returns git: false outside a repository', async () => {
+    const tree = await makeTempTree()
+    try {
+      const roots = await canonicalRoots([tree.root])
+      expect(await gitStatus(roots, tree.root)).toMatchObject({ git: false, changes: [] })
+    } finally {
+      await tree.cleanup()
+    }
+  })
+
+  it('keeps paths relative to a subdirectory root and drops changes outside it', async () => {
+    await writeFile(join(repo.root, 'sub', 'x.ts'), 'export const x = 2\n')
+    const sub = join(repo.root, 'sub')
+    const roots = await canonicalRoots([sub])
+    const got = await gitStatus(roots, sub)
+    expect(got.git).toBe(true)
+    expect(got.changes).toEqual([{ path: 'x.ts', index: ' ', worktree: 'M' }])
+  })
+})
+
+describe('listTree status', () => {
+  it('carries the git status of the root on the listing', async () => {
+    const repo = await makeTempRepo()
+    try {
+      const roots = await canonicalRoots([repo.root])
+      const got = await listTree(roots, repo.root, '')
+      expect(got.status.git).toBe(true)
+      expect(got.status.changes).toContainEqual({ path: 'a.txt', index: ' ', worktree: 'M' })
+    } finally {
+      await repo.cleanup()
+    }
   })
 })

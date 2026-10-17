@@ -5,9 +5,41 @@
  *
  * Read-only by construction. Nothing in this module writes, stages, or watches.
  */
+import { execFile } from 'node:child_process'
 import { lstat, open, readdir, realpath, stat } from 'node:fs/promises'
-import { isAbsolute, join, relative, resolve, sep } from 'node:path'
-import type { FileTextResponse, FileTreeEntry, FileTreeResponse } from '../shared/protocol.ts'
+import { isAbsolute, join, posix, relative, resolve, sep } from 'node:path'
+import { promisify } from 'node:util'
+import type {
+  FileChange,
+  FileStatus,
+  FileTextResponse,
+  FileTreeEntry,
+  FileTreeResponse,
+} from '../shared/protocol.ts'
+
+const execFileAsync = promisify(execFile)
+
+/**
+ * Run git read-only against a confined directory. Output is NOT trimmed: porcelain's
+ * leading space in ` M path` is data. A read-only reader must not take index.lock
+ * while the agent's own git runs, and must never block on a credential prompt.
+ */
+const runGit = async (dir: string, args: string[]): Promise<string> => {
+  const { stdout } = await execFileAsync('git', ['-C', dir, ...args], {
+    timeout: gitTimeoutMs,
+    maxBuffer: 8 * 1024 * 1024,
+    env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' },
+  })
+  return stdout
+}
+
+const tryGit = async (dir: string, args: string[]): Promise<string | null> => {
+  try {
+    return await runGit(dir, args)
+  } catch {
+    return null
+  }
+}
 
 export const maxFileBytes = 1024 * 1024
 export const maxTreeEntries = 2000
@@ -163,12 +195,13 @@ export async function listTree(
     })
   )
 
+  const status = await gitStatus(roots, root)
   return {
     root,
     path: got.rel,
     entries,
     truncated,
-    status: { git: false, changes: [] },
+    status: { git: status.git, changes: status.changes },
   }
 }
 
@@ -214,4 +247,56 @@ export async function readText(
     truncated: size > maxFileBytes,
     binary,
   }
+}
+
+const noGit = (root: string): FileStatus & { root: string } => ({ root, git: false, changes: [] })
+
+/**
+ * Porcelain v1, NUL-separated, relative to the repository root even when run from a
+ * subdirectory. `rev-parse --show-prefix` gives that subdirectory, so each path is
+ * stripped of it and records outside the root are dropped. Read-only and never throws:
+ * no repository, no git binary, or a timeout is `git: false`.
+ */
+export async function gitStatus(
+  roots: readonly KnownRoot[],
+  root: string
+): Promise<FileStatus & { root: string }> {
+  const got = await confine(roots, root, '')
+  const prefixOut = await tryGit(got.abs, ['rev-parse', '--show-prefix'])
+  if (prefixOut === null) return noGit(root)
+  // The only trailing byte this trims is git's own newline; the path itself is untouched.
+  const prefix = prefixOut.replace(/\n$/, '')
+
+  const out = await tryGit(got.abs, ['status', '--porcelain=v1', '-z'])
+  if (out === null) return noGit(root)
+
+  const fields = out.split('\0')
+  if (fields[fields.length - 1] === '') fields.pop()
+
+  const changes: FileChange[] = []
+  const inRoot = (repoPath: string) => prefix === '' || repoPath.startsWith(prefix)
+  const toRoot = (repoPath: string) => repoPath.slice(prefix.length)
+
+  let i = 0
+  while (i < fields.length && changes.length < maxChanges) {
+    const rec = fields[i++] ?? ''
+    if (rec.length < 4) continue
+    const index = rec[0] ?? ' '
+    const worktree = rec[1] ?? ' '
+    const repoPath = rec.slice(3)
+    // A rename or copy is followed by its origin path as its own NUL field.
+    let origin: string | undefined
+    if (index === 'R' || index === 'C') origin = fields[i++]
+    if (!inRoot(repoPath)) continue
+
+    const change: FileChange = { path: toRoot(repoPath), index, worktree }
+    if (origin !== undefined) {
+      // An origin outside this root is shown as a root-relative `../` path, never absolute.
+      change.originPath =
+        prefix === '' ? origin : posix.relative(prefix, origin)
+    }
+    changes.push(change)
+  }
+
+  return { root, git: true, changes }
 }
