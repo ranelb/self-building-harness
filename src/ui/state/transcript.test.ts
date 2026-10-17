@@ -36,6 +36,18 @@ describe('timeline', () => {
       expect(state.items[1]).toMatchObject({ kind: 'divider', pending: false })
     })
 
+    it('puts the prose after the end sentinel below the divider', () => {
+      const state = apply([
+        { type: 'turn.started', turnId: 1 },
+        { type: 'chunk', text: 'before' },
+        { type: 'compaction', phase: 'start' },
+        { type: 'compaction', phase: 'end' },
+        { type: 'chunk', text: 'after' },
+      ])
+      expect(state.items.map((item) => item.kind)).toEqual(['agent', 'divider', 'agent'])
+      expect(state.items[2]).toMatchObject({ kind: 'agent', text: 'after' })
+    })
+
     it('inserts a closed divider for an end with no matching start', () => {
       const state = apply([
         { type: 'turn.started', turnId: 1 },
