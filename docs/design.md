@@ -214,6 +214,21 @@ lights up for a backend that offers one. Attachments are shipped as bytes, persi
 by the core, and mapped to an ACP image block, embedded text, or a file link; a PDF
 is handed to the harness, because ACP cannot inline it and SBH does not parse it.
 
+## Turn control and compaction
+
+Prompts are serialised inside the ACP connection: one `session/prompt` is in flight
+per connection, and `drain()` is the only place that starts a turn or emits its
+start and finish, so a queue cannot outlive the connection that owns it. Enter queues
+a follow-up; Shift+Enter steers, which is cancel-then-jump-the-queue, so the reflexive
+key never cancels work. Stop cancels the in-flight turn and keeps the queue. Turn ids
+are process-global, so a late settlement from a swapped connection cannot be mistaken
+for the live turn. Compaction is a marker derived from pi-acp's prose, not a protocol
+signal: it is matched by exact equality on two sentinel strings, replaced rather than
+duplicated, and carries no summary. Two limits are named, not hidden: if pi-acp
+rewords the sentinels the divider silently stops appearing, and goose emits no
+compaction signal, so there is no divider for goose. An agent-authored transcript
+override that does not handle the `divider` item kind will not render it.
+
 ## Project files, read-only
 
 The core reads project files only under working directories it already knows (the

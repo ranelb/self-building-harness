@@ -161,3 +161,29 @@ Decisions recorded for the project file panel (see
 - **Roots only grow, and a GET never spawns an agent.** A root enters the known set
   when a session's cwd is established; file reads never create a session or start a
   backend process. Verified by a smoke run: 15 reads left the core with no child.
+
+## Turn control and compaction
+
+Decisions recorded for turn control and compaction (see
+`docs/superpowers/plans/2026-10-17-turn-control-and-compaction.md`):
+
+- **The prompt queue lives inside the ACP connection, not the server.** One
+  `session/prompt` is in flight per connection, ever. `drain()` is the only writer of
+  the in-flight flag and the only emitter of `turn.started` / `turn.finished`.
+- **Enter queues a follow-up; Shift+Enter steers.** A steer cancels the in-flight turn
+  and jumps ahead of queued follow-ups. Escape and Stop still cancel the in-flight turn
+  only; they do not touch the queue.
+- **Stop keeps the queue.** `queue.clear` is the explicit way to drop waiting prompts.
+  It uses `conn?.`, so clearing an empty queue never spawns an agent.
+- **Turn ids are process-global.** A settlement that arrives after a connection swap
+  cannot be mistaken for the live turn; the reducer ignores any `turn.finished` whose
+  id is not the live one.
+- **Compaction is matched by trimmed exact equality** on two pi-acp prose sentinels. A
+  match is replaced, never duplicated, and carries no summary; the core never reads the
+  pi session store for it.
+- **Known limitation, stated plainly:**
+  - If pi-acp rewords those sentinels, the divider silently stops appearing. Nothing
+    fails loudly.
+  - goose emits no compaction signal at all, so the divider never appears for goose.
+  - An agent-authored transcript override in `~/.config/sbh/components/` that does not
+    handle the `divider` item kind will not render it. The built-in transcript does.
