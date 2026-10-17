@@ -124,6 +124,15 @@ A **phone surface** ships too — the core serves a different layout/theme/compo
 per client-declared profile, and a companion server serves the built client and
 proxies the loopback core.
 
+Since the installed build, the repo also has a read-only **project file** path
+(`/files`, `/files/tree`, `/files/diff`), **turn control** (Enter queues, Shift+Enter
+steers, Stop keeps the queue, a divider where pi compacts), and **composer context**
+(`@path:lines` resolved in the core; `!` runs a command and `!!` runs one whose output
+the model never sees). None of this is packaged or installed yet. Limits: `!!` hides
+output from the model, not from other clients; `!` sends its output to the model,
+secrets included; compaction detection depends on pi-acp's exact prose, and goose emits
+no compaction signal.
+
 What is left is not core work: **pairing** for the phone server (it has no auth and
 relies on the network), an upgrade path, and the daily-use reckoning. See
 [`HANDOFF.md`](HANDOFF.md).

@@ -1,6 +1,6 @@
 # Turn control and compaction (Phase 2) Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Serialise prompts inside `AcpConnection` with a steer/follow-up distinction, give every turn an identity the reducer can trust, and turn pi-acp's compaction prose into a divider on the timeline.
 
@@ -180,8 +180,8 @@ Failure modes no happy-path test covers; each gets a test in an owning task.
 **Files:**
 - Modify: `PLAN.md` (decision records), `docs/design.md` (one paragraph: prompts are serialised in the connection; compaction is a marker derived from prose)
 
-- [ ] **Step 1:** `npx vitest run core/acp/client.test.ts core/events.test.ts core/server.test.ts src/ui/state/transcript.test.ts src/ui/host/transcript.test.ts src/App.test.tsx` — green.
-- [ ] **Step 2:** `npx tsc -b` clean; `npm test` green with no network and no model.
+- [x] **Step 1:** `npx vitest run core/acp/client.test.ts core/events.test.ts core/server.test.ts src/ui/state/transcript.test.ts src/ui/host/transcript.test.ts src/App.test.tsx` — green.
+- [x] **Step 2:** `npx tsc -b` clean; `npm test` green with no network and no model.
 - [ ] **Step 3: Manual smoke, no model:**
 
   ```bash
@@ -191,8 +191,8 @@ Failure modes no happy-path test covers; each gets a test in an owning task.
 
   Type `one`, press Enter, then `two`, press Enter while the first is streaming. Expect: two messages, the `1 queued` badge, then two answers in order and no error. Then repeat against `SBH_BACKEND=fake:compaction` and check the divider lands between `before` and `after`.
 
-- [ ] **Step 4:** Record the decisions in `PLAN.md` (queue in the connection; Enter queues / Shift+Enter steers; Stop keeps the queue; turn ids are process-global; compaction is prose-matched with no summary) and a paragraph in `docs/design.md`. State the sentinel limitation there, not only in the spec.
-- [ ] **Step 5: Commit.** `git commit -m "docs: prompts are serialised, and compaction is a marker"`
+- [x] **Step 4:** Record the decisions in `PLAN.md` (queue in the connection; Enter queues / Shift+Enter steers; Stop keeps the queue; turn ids are process-global; compaction is prose-matched with no summary) and a paragraph in `docs/design.md`. State the sentinel limitation there, not only in the spec.
+- [x] **Step 5: Commit.** `git commit -m "docs: prompts are serialised, and compaction is a marker"`
 
 ---
 

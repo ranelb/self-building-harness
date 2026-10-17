@@ -15,6 +15,14 @@ as files and the app hot-reloads.
 Desktop is usable and installed. The suite is green and needs no network or model;
 `npx tsc -b` is clean.
 
+Since the installed build, three phases are in the repo and tested but **not packaged or
+installed**: the project file read path (`core/files.ts`, `GET /files`, `/files/tree`,
+`/files/diff`), turn control (queue, steer, `queue.clear`, turn ids, the compaction
+divider for pi), and composer context (`@path:lines` in `core/mentions.ts`, `!`/`!!` in
+`core/shell.ts`, with the grammar in `shared/mentions.ts`). They are not yet rendered
+in a real window: the Playwright check on the live config and the manual curl smoke
+are unticked in their plans.
+
 ```
 core/      the process: ACP, permissions, WS server, theme/layout/components,
            versioning, watcher, machine sampling, sessions, capabilities; the
@@ -57,7 +65,7 @@ unit; it discovers the running core's advertised port, proxies `/health` and
 `/layout?profile=phone`, and serves the phone client. Switching the backend from the
 phone (goose → Pi) followed by a prompt returns a real reply with no error.
 
-**Never verified:** a non-Arch install of the *package* (the `.deb` builds but is
+**Never verified:** the phase 1–3 work in a real window, a non-Arch install of the *package* (the `.deb` builds but is
 not installed anywhere), an upgrade path, and any mobile client *off this machine* —
 the transport works locally, but a real phone over a tailnet has not been used.
 
@@ -84,6 +92,10 @@ is the one genuine gap — anyone who can reach the port drives the agent.
   validates and persists; keys are a component's convention, not the core's.
   `~/.config/sbh/components/sbh-settings.js` is the first consumer. Still missing: a
   typed settings schema and per-profile scoping of the store.
+- **Phone proxy misses `/state`.** `CORE_ROUTES` in `core/phone-server.ts` does not
+  list `/state`, so the settings store is unreachable from a phone. Fix before pairing.
+- **Agent-authored transcript overrides** must handle the `divider` item kind and the
+  `context` / shell tool-card events, or they silently miss them. The built-in does.
 - **The model list needs a session** to exist, so the core opens one on client
   connect. Under goose that leaves an empty "New Chat" row per run.
 - **The composition of the shipped chrome** is still a small set of built-ins; a

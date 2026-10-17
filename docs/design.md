@@ -37,8 +37,11 @@ requests, so a second client (a phone, a CLI) is just another WebSocket. The
 client speaks `shared/protocol.ts` and never imports `core/`.
 
 - `core/` — ACP connections, event normalization, the permission gate, the
-  loopback HTTP + WebSocket server, the watcher, versioning, config serving.
-- `shared/` — the wire contract and the tree/host types, consumed by both sides.
+  loopback HTTP + WebSocket server, the watcher, versioning, config serving, the
+  read-only project file path (`files.ts`), mention resolution (`mentions.ts`) and
+  the typed-command runner (`shell.ts`).
+- `shared/` — the wire contract, the tree/host types and the composer grammar
+  (`mentions.ts`), consumed by both sides.
 - `src/ui/` — the tree renderer, the component registry, the host components, the
   stream client and the transcript reducer.
 - `src-tauri/` — the shell: spawn the core, hand the client its port, kill the

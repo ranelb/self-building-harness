@@ -35,8 +35,15 @@ Break one of these and you have broken the point of the project.
 - `core/` — the local process: ACP connections, event normalization, the
   permission gate, the loopback HTTP + WebSocket server, config serving, versioning,
   the watcher, machine sampling. The only place that spawns agents.
+- `core/files.ts` — the read-only project file path: `confine()` is the only gate from
+  a request to disk; `/files*` routes go through it.
+- `core/mentions.ts` — resolves `@path:lines` into confined content blocks and
+  `context` events. `core/shell.ts` — runs a typed `!`/`!!` command as a killed-on-demand
+  process group. Neither spawns an agent; `shell.ts` is one of the three spawn sites.
 - `shared/protocol.ts` — the wire contract (`UiEvent`, `ClientToCore`). Lives in
   `shared/` so the UI speaks it **without importing `core/`**.
+- `shared/mentions.ts` — the composer's one grammar (`@path:lines`, `!`, `!!`), read by
+  both the UI and `core/mentions.ts`. Pure; touches no disk.
 - `src/ui/tree/` — the tree renderer, the component registry, patch/destroy.
 - `src/ui/atoms/` — the built-in layout and control components, one per file, each
   self-registering. `src/ui/atoms/style.ts` is the styling reference.
@@ -295,6 +302,11 @@ Turn it on and the core judges every ACP `session/request_permission` before the
 sees it, answering allow or deny itself; the card is told the outcome
 (`permission.resolved`) and cannot overrule it. **A toggle the policed party
 enforces is not a toggle**, so authority — not presentation — is what moves.
+
+`[capabilities.shell] operator` judges typed `!`/`!!` commands as `shell.operator`,
+which defaults to allow. It is a policy, not a boundary: any client that reaches the
+core can send a shell message. Set `operator = "deny"` to make typed commands face the
+`shell` rule.
 
 The manifest is **root-owned**, because an agent runs as the user and could rewrite
 a user-owned policy:
