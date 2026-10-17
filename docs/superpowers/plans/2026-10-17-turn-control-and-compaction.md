@@ -49,12 +49,12 @@ Failure modes no happy-path test covers; each gets a test in an owning task.
 - Produces: the reducer rule `if (event.turnId !== state.liveTurn) return state` in `turn.finished`.
 - Consumes: nothing.
 
-- [ ] **Step 1: Write the failing tests.** In `src/ui/state/transcript.test.ts`: `it('ignores a turn.finished that does not belong to the live turn')` — apply `turn.started{turnId:1}`, `turn.started{turnId:2}`, `turn.finished{turnId:1, stopReason:'cancelled'}` and expect `status === 'streaming'`; a second test expects `turn.finished{turnId:2}` to reach `'idle'`. In `core/acp/client.test.ts`: `it('pairs every turn.finished with its turn.started')` — two sequential `conn.prompt()` calls against `fake('happy')`, then assert the `turnId`s of the started list equal those of the finished list and are strictly increasing.
-- [ ] **Step 2: Run them.** `npx vitest run src/ui/state/transcript.test.ts` and `npx vitest run core/acp/client.test.ts` — FAIL (types reject the literals once the field is required; the pairing assertion fails today because there is no id).
-- [ ] **Step 3: Implement.** Add `turnId` to both union members in `shared/protocol.ts`. In `core/acp/client.ts` add `let turnSequence = 0` at module scope with the comment explaining why it is not per connection, and emit `{ type: 'turn.started', turnId: ++turnSequence }` / `{ type: 'turn.finished', turnId, stopReason }` from a single local `const turnId` in both the resume branch and the prompt body. In `transcript.ts` add `liveTurn` to the interface, set it in `turn.started`, and guard `turn.finished`.
-- [ ] **Step 4: Update the existing literals.** Every `{ type: 'turn.started' }` / `{ type: 'turn.finished', … }` in `src/ui/state/transcript.test.ts` (L17, 27, 29, 30, 47, 57, 70, 73, 74, 86, 124) needs a `turnId`, numbered per test so the section it belongs to stays one turn. `src/ui/state/stream.test.ts:53` and `src/App.test.tsx:63` send JSON strings and need no change.
-- [ ] **Step 5: Run it.** `npx vitest run core/acp/client.test.ts src/ui/state/transcript.test.ts` — PASS. Then `npx tsc -b` — clean.
-- [ ] **Step 6: Commit.** `git commit -m "feat(core): give every turn an id and ignore a stale finish"`
+- [x] **Step 1: Write the failing tests.** In `src/ui/state/transcript.test.ts`: `it('ignores a turn.finished that does not belong to the live turn')` — apply `turn.started{turnId:1}`, `turn.started{turnId:2}`, `turn.finished{turnId:1, stopReason:'cancelled'}` and expect `status === 'streaming'`; a second test expects `turn.finished{turnId:2}` to reach `'idle'`. In `core/acp/client.test.ts`: `it('pairs every turn.finished with its turn.started')` — two sequential `conn.prompt()` calls against `fake('happy')`, then assert the `turnId`s of the started list equal those of the finished list and are strictly increasing.
+- [x] **Step 2: Run them.** `npx vitest run src/ui/state/transcript.test.ts` and `npx vitest run core/acp/client.test.ts` — FAIL (types reject the literals once the field is required; the pairing assertion fails today because there is no id).
+- [x] **Step 3: Implement.** Add `turnId` to both union members in `shared/protocol.ts`. In `core/acp/client.ts` add `let turnSequence = 0` at module scope with the comment explaining why it is not per connection, and emit `{ type: 'turn.started', turnId: ++turnSequence }` / `{ type: 'turn.finished', turnId, stopReason }` from a single local `const turnId` in both the resume branch and the prompt body. In `transcript.ts` add `liveTurn` to the interface, set it in `turn.started`, and guard `turn.finished`.
+- [x] **Step 4: Update the existing literals.** Every `{ type: 'turn.started' }` / `{ type: 'turn.finished', … }` in `src/ui/state/transcript.test.ts` (L17, 27, 29, 30, 47, 57, 70, 73, 74, 86, 124) needs a `turnId`, numbered per test so the section it belongs to stays one turn. `src/ui/state/stream.test.ts:53` and `src/App.test.tsx:63` send JSON strings and need no change.
+- [x] **Step 5: Run it.** `npx vitest run core/acp/client.test.ts src/ui/state/transcript.test.ts` — PASS. Then `npx tsc -b` — clean.
+- [x] **Step 6: Commit.** `git commit -m "feat(core): give every turn an id and ignore a stale finish"`
 
 ### Task 2: The queue inside `AcpConnection`
 
@@ -70,12 +70,12 @@ Failure modes no happy-path test covers; each gets a test in an owning task.
 - Produces: fixture scenario `'queue-turn'` — echoes `start <prompt> `, holds 300 ms, echoes `end <prompt>`, answers `end_turn`; any concurrent `session/prompt` is answered `{ error: { code: -32000, message: 'concurrent prompt' } }`.
 - Consumes: `turnSequence` (Task 1).
 
-- [ ] **Step 1: Write the failing fixture.** Add `'queue-turn'` to `SCENARIOS` and to the sorted list in `fake-acp-agent.test.ts`. In `serve()`'s `session/prompt` case add the guard: if a prompt is already unresolved, answer with the `-32000` error and return; otherwise mark it in flight around the existing dispatch, and let `runScenario` return an optional `stopReason` string that overrides `'end_turn'`.
-- [ ] **Step 2: Write the failing test.** `core/acp/client.test.ts`: `it('runs a second prompt after the first finishes, not concurrently')` — `fake('queue-turn')`, `const a = conn.prompt('one')`, `const b = conn.prompt('two')`, `await Promise.all([a, b])`; assert no `error` events, exactly two `turn.started`, and that the joined chunk text has `start one … end one` before `start two`.
-- [ ] **Step 3: Run it.** `npx vitest run core/acp/client.test.ts -t 'runs a second prompt'` — FAIL (an `error` event from the fixture's `-32000`).
-- [ ] **Step 4: Implement** the queue exactly as the spec's pseudocode states: enqueue in `prompt()`, a single `drain()` that is the only writer of `inFlight` and the only emitter of `turn.started`/`turn.finished`, `next.resolve()` in the `finally`, and `queued.splice(0).forEach((entry) => entry.resolve())` in `close()`. `cancel()` keeps its body and gains one comment line: it cancels the in-flight turn and leaves the queue running.
-- [ ] **Step 5: Run it.** `npx vitest run core/acp/client.test.ts` — PASS, including the pre-existing `cancel` and resume tests. `npx tsc -b`.
-- [ ] **Step 6: Commit.** `git commit -m "feat(core): serialise prompts in the connection, not in the server"`
+- [x] **Step 1: Write the failing fixture.** Add `'queue-turn'` to `SCENARIOS` and to the sorted list in `fake-acp-agent.test.ts`. In `serve()`'s `session/prompt` case add the guard: if a prompt is already unresolved, answer with the `-32000` error and return; otherwise mark it in flight around the existing dispatch, and let `runScenario` return an optional `stopReason` string that overrides `'end_turn'`.
+- [x] **Step 2: Write the failing test.** `core/acp/client.test.ts`: `it('runs a second prompt after the first finishes, not concurrently')` — `fake('queue-turn')`, `const a = conn.prompt('one')`, `const b = conn.prompt('two')`, `await Promise.all([a, b])`; assert no `error` events, exactly two `turn.started`, and that the joined chunk text has `start one … end one` before `start two`.
+- [x] **Step 3: Run it.** `npx vitest run core/acp/client.test.ts -t 'runs a second prompt'` — FAIL (an `error` event from the fixture's `-32000`).
+- [x] **Step 4: Implement** the queue exactly as the spec's pseudocode states: enqueue in `prompt()`, a single `drain()` that is the only writer of `inFlight` and the only emitter of `turn.started`/`turn.finished`, `next.resolve()` in the `finally`, and `queued.splice(0).forEach((entry) => entry.resolve())` in `close()`. `cancel()` keeps its body and gains one comment line: it cancels the in-flight turn and leaves the queue running.
+- [x] **Step 5: Run it.** `npx vitest run core/acp/client.test.ts` — PASS, including the pre-existing `cancel` and resume tests. `npx tsc -b`.
+- [x] **Step 6: Commit.** `git commit -m "feat(core): serialise prompts in the connection, not in the server"`
 
 ### Task 3: Steer — cancel, jump the queue, and say so on the wire
 
@@ -91,12 +91,12 @@ Failure modes no happy-path test covers; each gets a test in an owning task.
 - Produces: fixture scenario `'steer'` — the first prompt emits `"slow "`, awaits `waitCancel(3000)`, emits `"interrupted"` or `"finished"` and returns `'cancelled'` or `'end_turn'`; every later prompt emits `"echo <prompt>"` and answers immediately.
 - Consumes: the queue (Task 2), turn ids (Task 1).
 
-- [ ] **Step 1: Write the failing fixture.** Add `'steer'` to `SCENARIOS` and to the sorted list in `fake-acp-agent.test.ts`. Extract the existing `cancelRequested`/`resolveCancel` pair into `waitCancel(ms): Promise<boolean>`, keep the `'cancel'` scenario's behaviour identical, and add the `'steer'` scenario on top of it.
-- [ ] **Step 2: Write the failing tests.** `core/acp/client.test.ts`: `it('steers: cancels the in-flight turn and jumps the queue')` — `fake('steer')`, `conn.prompt('slow')`, wait for a chunk, record `Date.now()`, `await conn.prompt('redirect', [], { steer: true })`, assert the first `turn.finished.stopReason === 'cancelled'`, the second turn's chunks contain `echo redirect`, no `error` events, and the elapsed time is under 2000 ms (the hold is 3000). `it('keeps a steer ahead of an earlier follow-up')` — start `slow`, queue `later` without steer, then steer `now`; the echo order is `now` then `later`.
-- [ ] **Step 3: Run them.** `npx vitest run core/acp/client.test.ts -t 'steer'` — FAIL.
-- [ ] **Step 4: Implement.** Add `steer` to the protocol's `prompt` member and `PromptOptions` to `client.ts`; enqueue steers after the leading steers and before every follow-up (`findIndex((waiting) => !waiting.steer)`), send `session/cancel` at enqueue time when `inFlight`, and let `drain` handle the rest. Then in `core/server.ts` pass the flag through.
-- [ ] **Step 5: Run them.** `npx vitest run core/acp/client.test.ts core/server.test.ts` — PASS. `npx tsc -b`.
-- [ ] **Step 6: Commit.** `git commit -m "feat: steer — cancel the turn and jump the queue"`
+- [x] **Step 1: Write the failing fixture.** Add `'steer'` to `SCENARIOS` and to the sorted list in `fake-acp-agent.test.ts`. Extract the existing `cancelRequested`/`resolveCancel` pair into `waitCancel(ms): Promise<boolean>`, keep the `'cancel'` scenario's behaviour identical, and add the `'steer'` scenario on top of it.
+- [x] **Step 2: Write the failing tests.** `core/acp/client.test.ts`: `it('steers: cancels the in-flight turn and jumps the queue')` — `fake('steer')`, `conn.prompt('slow')`, wait for a chunk, record `Date.now()`, `await conn.prompt('redirect', [], { steer: true })`, assert the first `turn.finished.stopReason === 'cancelled'`, the second turn's chunks contain `echo redirect`, no `error` events, and the elapsed time is under 2000 ms (the hold is 3000). `it('keeps a steer ahead of an earlier follow-up')` — start `slow`, queue `later` without steer, then steer `now`; the echo order is `now` then `later`.
+- [x] **Step 3: Run them.** `npx vitest run core/acp/client.test.ts -t 'steer'` — FAIL.
+- [x] **Step 4: Implement.** Add `steer` to the protocol's `prompt` member and `PromptOptions` to `client.ts`; enqueue steers after the leading steers and before every follow-up (`findIndex((waiting) => !waiting.steer)`), send `session/cancel` at enqueue time when `inFlight`, and let `drain` handle the rest. Then in `core/server.ts` pass the flag through.
+- [x] **Step 5: Run them.** `npx vitest run core/acp/client.test.ts core/server.test.ts` — PASS. `npx tsc -b`.
+- [x] **Step 6: Commit.** `git commit -m "feat: steer — cancel the turn and jump the queue"`
 
 ### Task 4: Queue depth, the badge, and `queue.clear`
 
@@ -114,12 +114,12 @@ Failure modes no happy-path test covers; each gets a test in an owning task.
 - Produces: `clearQueue(): number` on `AcpConnection`; `Transcript.queued` / `HostState.queued`; action `queue.clear`.
 - Consumes: the queue (Task 2).
 
-- [ ] **Step 1: Write the failing tests.** `src/ui/state/transcript.test.ts`: `it('counts the queue depth')` — `{ type: 'queue', pending: 2 }` ⇒ `queued === 2`, and `session.reset` ⇒ `0`. `core/acp/client.test.ts`: `it('clearQueue drops only the waiting prompts')` and `it('drops the queue when the connection closes')`. `core/server.test.ts`, `describe('turn control')`: `it('publishes the queue depth')` (`fake:queue-turn`, two prompts, expect a `queue` event with `pending: 1` then `pending: 0`) and `it('does not spawn an agent to clear an empty queue')` (send `queue.clear` first, then assert `/sessions` is empty / no session was created). `src/ui/host/transcript.test.ts`: `it('shows the depth badge and clears the queue')`.
-- [ ] **Step 2: Run them.** `npx vitest run src/ui/state/transcript.test.ts core/acp/client.test.ts core/server.test.ts -t 'queue'` — FAIL.
-- [ ] **Step 3: Implement** `publishQueue()` (emit only on a depth change), `clearQueue()`, the `queue` reducer case, the `HostState.queued` mapping in `src/App.tsx:179-199`, the `queue.clear` server case with `conn?.`, and the composer's badge plus Clear button.
-- [ ] **Step 4: Add `queued: 0` to every `HostState` literal.** `src/ui/host/transcript.test.ts:29`, `src/ui/tree/destroy.test.ts:17`, `src/ui/tree/reconcile.test.ts:18`, `src/ui/tree/render.test.ts:21`.
-- [ ] **Step 5: Run it.** `npx vitest run src/ui/state/transcript.test.ts src/ui/host/transcript.test.ts core/acp/client.test.ts core/server.test.ts` — PASS. `npx tsc -b`.
-- [ ] **Step 6: Commit.** `git commit -m "feat: queue depth on the wire, and a way to empty the queue"`
+- [x] **Step 1: Write the failing tests.** `src/ui/state/transcript.test.ts`: `it('counts the queue depth')` — `{ type: 'queue', pending: 2 }` ⇒ `queued === 2`, and `session.reset` ⇒ `0`. `core/acp/client.test.ts`: `it('clearQueue drops only the waiting prompts')` and `it('drops the queue when the connection closes')`. `core/server.test.ts`, `describe('turn control')`: `it('publishes the queue depth')` (`fake:queue-turn`, two prompts, expect a `queue` event with `pending: 1` then `pending: 0`) and `it('does not spawn an agent to clear an empty queue')` (send `queue.clear` first, then assert `/sessions` is empty / no session was created). `src/ui/host/transcript.test.ts`: `it('shows the depth badge and clears the queue')`.
+- [x] **Step 2: Run them.** `npx vitest run src/ui/state/transcript.test.ts core/acp/client.test.ts core/server.test.ts -t 'queue'` — FAIL.
+- [x] **Step 3: Implement** `publishQueue()` (emit only on a depth change), `clearQueue()`, the `queue` reducer case, the `HostState.queued` mapping in `src/App.tsx:179-199`, the `queue.clear` server case with `conn?.`, and the composer's badge plus Clear button.
+- [x] **Step 4: Add `queued: 0` to every `HostState` literal.** `src/ui/host/transcript.test.ts:29`, `src/ui/tree/destroy.test.ts:17`, `src/ui/tree/reconcile.test.ts:18`, `src/ui/tree/render.test.ts:21`.
+- [x] **Step 5: Run it.** `npx vitest run src/ui/state/transcript.test.ts src/ui/host/transcript.test.ts core/acp/client.test.ts core/server.test.ts` — PASS. `npx tsc -b`.
+- [x] **Step 6: Commit.** `git commit -m "feat: queue depth on the wire, and a way to empty the queue"`
 
 ### Task 5: Compaction in the core — sentinels to an event
 
