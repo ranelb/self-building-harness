@@ -246,6 +246,23 @@ followed. The read path is read-only: it never writes, renames or deletes, and i
 never spawns an agent. It sits behind the same origin guard as every other route,
 so a foreign page cannot list the user's project.
 
+## Composer context
+
+- **`@path:12-20` is resolved in the core, from the prompt text.** The UI has no
+  filesystem, and the protocol has no reply frame a client could answer a read with.
+  The read goes through the same gate as the file panel, so a refused path becomes a
+  `skipped` event, never a block. `embeddedContext` chooses the block form (resource
+  or plain text); it never decides whether the content is sent.
+- **`!` and `!!` are an explicit wire message** (`shell` with `includeInContext`),
+  never inferred from prose. The mention stays in the prompt text; nothing is rewritten.
+- **`!!` is excluded structurally.** The core keeps no copy of shell output, and only
+  the client holds `!` results until the next prompt, where it sends them as context.
+  A `!!` result has no path to the model because nothing ever carries it there.
+- **Honest limits:**
+  - `!!` keeps output out of the *model's* context. It does not keep it off other
+    clients, and it stays in the transcript.
+  - `!` puts whatever the command printed in front of the model, secrets included.
+
 ## Not in scope (decided, not forgotten)
 
 - **Mobile** — the next piece, and the reason the core is loopback-first. It is a

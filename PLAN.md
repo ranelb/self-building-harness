@@ -187,3 +187,20 @@ Decisions recorded for turn control and compaction (see
   - goose emits no compaction signal at all, so the divider never appears for goose.
   - An agent-authored transcript override in `~/.config/sbh/components/` that does not
     handle the `divider` item kind will not render it. The built-in transcript does.
+
+## Composer context
+
+Decisions recorded for `@path` mentions and `!` / `!!` shell lines (see
+[`docs/design.md`](docs/design.md#composer-context) for the reasoning and limits):
+
+- **One grammar, in `shared/mentions.ts`, used by both sides.** The UI reads it to
+  render tokens; the core reads it to resolve them. Neither side keeps its own regex.
+- **The mention stays in the prompt text.** No rewriting into blocks or placeholders;
+  the text the user typed is the text the agent receives, with resolved content
+  attached alongside it.
+- **The shell runner uses `/bin/sh -c`, detached, never `-l`.** A login shell would
+  source profile files on every typed command and make its output depend on the
+  user's login state. The process group is killed on cap, timeout or cancel.
+- **The operator policy key `[capabilities.shell] operator` defaults to allow.** It is
+  a policy, not a boundary: any client that reaches the core can send a `shell`
+  message. `operator = "deny"` hands typed commands to the agent's `shell` rule.

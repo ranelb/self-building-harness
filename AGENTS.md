@@ -19,8 +19,12 @@ Break one of these and you have broken the point of the project.
 - **Components are dumb about capability.** A component reads `node`, `ctx.tokens`,
   `ctx.host` and `ctx.dispatch`, and imports nothing from `core/`. All capability
   lives in the host, in one auditable place.
-- **The core is the only spawner** of agent processes, and the only thing that
-  answers permission requests. The UI has no authority.
+- **The core is the only thing that spawns** processes, and the only thing that
+  answers permission requests. The UI has no authority. Three spawn sites, all in
+  the core: the agent in `core/acp/client.ts` (the trust boundary's subject); a
+  user-typed `!`/`!!` command in `core/shell.ts` (a detached process group, killed on
+  cap, timeout or cancel); and read-only `git` in `core/files.ts` (`execFile`, no shell).
+  Each is judged by the gate or is read-only; none is reachable from the UI directly.
 - **Loopback only.** The core binds `127.0.0.1`; the agent channel behind it has a
   shell, so the origin guard is not optional.
 - **The app is not the writer** of a harness's session store. It reads; it never
