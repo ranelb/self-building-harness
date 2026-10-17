@@ -31,6 +31,8 @@ export interface Transcript {
   agentTurn?: number
   /** The core's id for the turn currently streaming (internal). */
   liveTurn?: number
+  /** Prompts waiting behind the in-flight turn. */
+  queued: number
 }
 
 const noCapabilities = (): AgentCapabilities => ({
@@ -48,6 +50,7 @@ export const empty = (): Transcript => ({
   commands: [],
   capabilities: noCapabilities(),
   turn: 0,
+  queued: 0,
 })
 
 let sequence = 0
@@ -242,6 +245,9 @@ export function applyEvent(state: Transcript, event: UiEvent): Transcript {
 
     case 'permission.requested':
       return { ...state, pendingPermission: [...state.pendingPermission, event] }
+
+    case 'queue':
+      return { ...state, queued: event.pending }
 
     case 'session.reset':
       return reset(state)

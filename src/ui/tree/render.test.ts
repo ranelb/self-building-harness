@@ -17,6 +17,7 @@ const ctx: RenderContext = {
     draftAttachments: [],
     capabilities: { image: false, audio: false, embeddedContext: false, fork: false },
     status: 'idle',
+    queued: 0,
     draft: '',
     pendingPermission: [],
     notices: [],

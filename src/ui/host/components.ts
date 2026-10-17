@@ -763,6 +763,20 @@ registerComponent({
       live.ctx.dispatch(live.ctx.host.status === 'streaming' ? 'turn.cancel' : 'prompt.send')
     })
 
+    // Prompts waiting behind the in-flight turn; hidden at zero.
+    const queued = document.createElement('span')
+    queued.setAttribute('data-queued', '')
+    queued.style.cssText =
+      'display:none;color:var(--sbh-color-text-muted);font-size:var(--sbh-font-size-sm);white-space:nowrap'
+
+    const clear = document.createElement('button')
+    clear.setAttribute('data-queue-clear', '')
+    clear.textContent = 'Clear'
+    clear.title = 'Drop the queued messages (the running turn keeps going)'
+    controlStyle(clear)
+    clear.style.display = 'none'
+    clear.addEventListener('click', () => getLive(el)?.ctx.dispatch('queue.clear'))
+
     const menu = document.createElement('div')
     menu.setAttribute('data-commands', '')
     menu.style.cssText =
@@ -770,7 +784,7 @@ registerComponent({
       'border:1px solid var(--sbh-color-border);border-radius:var(--sbh-radius-md);' +
       'background:var(--sbh-color-surface);padding:var(--sbh-space-xs)'
 
-    row.append(attach, input, send)
+    row.append(attach, input, queued, clear, send)
     el.append(menu, tray, error, row, picker)
     return el
   },
@@ -786,6 +800,15 @@ registerComponent({
 
     const send = element.querySelector('button[data-send]') as HTMLButtonElement | null
     if (send) send.textContent = ctx.host.status === 'streaming' ? 'Stop' : 'Send'
+
+    const waiting = ctx.host.queued > 0 ? 'inline' : 'none'
+    const badge = element.querySelector('span[data-queued]') as HTMLElement | null
+    if (badge) {
+      badge.style.display = waiting
+      badge.textContent = `${ctx.host.queued} queued`
+    }
+    const clear = element.querySelector('button[data-queue-clear]') as HTMLElement | null
+    if (clear) clear.style.display = waiting
 
     const tray = element.querySelector('[data-attachments]') as HTMLElement | null
     if (tray) paintAttachments(tray, ctx.host.draftAttachments, element)

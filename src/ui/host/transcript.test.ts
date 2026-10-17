@@ -25,6 +25,7 @@ const withMessages = (count: number): RenderContext => {
       draftAttachments: [],
       capabilities: { image: false, audio: false, embeddedContext: false, fork: false },
       status: 'idle',
+      queued: 0,
       draft: '',
       pendingPermission: [],
       notices: [],
@@ -240,6 +241,22 @@ describe('composer', () => {
     expect(button.textContent).toBe('Stop')
     button.click()
     expect(actions).toEqual(['turn.cancel'])
+  })
+
+  it('shows the depth badge and clears the queue', () => {
+    const { el, actions } = withStatus('streaming', { queued: 2 })
+    const badge = el.querySelector('span[data-queued]') as HTMLElement
+    expect(badge.textContent).toBe('2 queued')
+    expect(badge.style.display).not.toBe('none')
+    const clear = el.querySelector('button[data-queue-clear]') as HTMLButtonElement
+    expect(clear.textContent).toBe('Clear')
+    clear.click()
+    expect(actions).toEqual(['queue.clear'])
+  })
+
+  it('hides the depth badge at zero', () => {
+    const { el } = withStatus('streaming')
+    expect((el.querySelector('span[data-queued]') as HTMLElement).style.display).toBe('none')
   })
 
   it('shows Send and renders staged attachments', () => {

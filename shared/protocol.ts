@@ -84,6 +84,8 @@ export type UiEvent =
    */
   | { type: 'turn.started'; turnId: number }
   | { type: 'turn.finished'; turnId: number; stopReason: string }
+  /** Prompts waiting behind the in-flight turn; published only when the depth changes. */
+  | { type: 'queue'; pending: number }
   | { type: 'session.reset'; reason: 'new' | 'fork' | 'resume' }
   /** The agent's slash commands (skills, builtins), for the composer's `/` menu. */
   | { type: 'commands'; commands: AvailableCommand[] }
@@ -117,6 +119,8 @@ export type ClientToCore =
   /** `steer`: cancel the in-flight turn and run this prompt next, ahead of follow-ups. */
   | { type: 'prompt'; text: string; attachments?: Attachment[]; steer?: boolean }
   | { type: 'cancel' }
+  /** Drop the waiting prompts; the in-flight turn is untouched. */
+  | { type: 'queue.clear' }
   | { type: 'session.new' }
   | { type: 'session.fork'; id?: string }
   | { type: 'permission'; requestId: string; decision: 'allow' | 'deny' }

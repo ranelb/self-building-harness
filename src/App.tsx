@@ -184,6 +184,7 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
     draftAttachments: attachments,
     capabilities: transcript.capabilities,
     status: transcript.status,
+    queued: transcript.queued,
     error: transcript.error,
     draft,
     pendingPermission: transcript.pendingPermission,
@@ -230,6 +231,10 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
 
         case 'turn.cancel':
           stream.current?.send({ type: 'cancel' })
+          return
+
+        case 'queue.clear':
+          stream.current?.send({ type: 'queue.clear' })
           return
 
         case 'session.new':

@@ -169,3 +169,11 @@ describe('resolvePermission', () => {
     expect(resolved.pendingPermission.map((p) => p.requestId)).toEqual(['r2'])
   })
 })
+
+describe('queue depth', () => {
+  it('counts the queue depth', () => {
+    const state = applyEvent(empty(), { type: 'queue', pending: 2 })
+    expect(state.queued).toBe(2)
+    expect(applyEvent(state, { type: 'session.reset', reason: 'new' }).queued).toBe(0)
+  })
+})

@@ -247,6 +247,50 @@ describe('turn control', () => {
   })
 })
 
+describe('queue depth', () => {
+  const waitUntil = async (predicate: () => boolean) => {
+    const started = Date.now()
+    while (!predicate()) {
+      if (Date.now() - started > 5000) throw new Error('timed out')
+      await new Promise((r) => setTimeout(r, 10))
+    }
+  }
+  const pendings = (events: UiEvent[]) =>
+    events.filter((e): e is Extract<UiEvent, { type: 'queue' }> => e.type === 'queue').map((e) => e.pending)
+
+  it('clearQueue drops only the waiting prompts', async () => {
+    const conn = connectAcp(fake('queue-turn'))
+    const events = collect(conn)
+    const a = conn.prompt('one')
+    const b = conn.prompt('two')
+    const c = conn.prompt('three')
+    await waitUntil(() => pendings(events).includes(2))
+    expect(conn.clearQueue()).toBe(2)
+    await Promise.all([a, b, c])
+    const text = events.filter((e) => e.type === 'chunk').map((e) => (e as { text: string }).text).join('')
+    expect(text).toContain('end one')
+    expect(text).not.toContain('two')
+    expect(text).not.toContain('three')
+    expect(events.filter((e) => e.type === 'turn.started')).toHaveLength(1)
+    expect(pendings(events).at(-1)).toBe(0)
+    expect(events.filter((e) => e.type === 'error')).toEqual([])
+    conn.close()
+  })
+
+  it('drops the queue when the connection closes', async () => {
+    const conn = connectAcp(fake('queue-turn'))
+    const events = collect(conn)
+    const a = conn.prompt('one')
+    const b = conn.prompt('two')
+    const c = conn.prompt('three')
+    await waitUntil(() => pendings(events).includes(2))
+    conn.close()
+    await Promise.all([a, b, c])
+    expect(events.filter((e) => e.type === 'turn.started')).toHaveLength(1)
+    expect(pendings(events).at(-1)).toBe(0)
+  })
+})
+
 describe('closing', () => {
   it('does not emit an error when the core closes an in-flight handshake', async () => {
     // A process that never answers ACP, so `open()` has a request in flight.

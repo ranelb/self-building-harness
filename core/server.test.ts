@@ -180,6 +180,37 @@ describe('core server', () => {
     ws.close()
   })
 
+  it('publishes the queue depth', async () => {
+    core = await startCore({ port: 0, backend: 'fake:queue-turn' })
+    const ws = new WebSocket(`ws://127.0.0.1:${core.port}/ws`)
+    const messages: any[] = []
+    await once(ws, 'open')
+    ws.on('message', (data) => messages.push(JSON.parse(String(data))))
+    ws.send(JSON.stringify({ type: 'prompt', text: 'one' }))
+    ws.send(JSON.stringify({ type: 'prompt', text: 'two' }))
+    await waitFor(() => messages.filter((m) => m.event?.type === 'turn.finished').length === 2)
+    const depths = messages.filter((m) => m.event?.type === 'queue').map((m) => m.event.pending)
+    expect(depths[0]).toBe(1)
+    expect(depths.at(-1)).toBe(0)
+    ws.close()
+  })
+
+  it('does not spawn an agent to clear an empty queue', async () => {
+    core = await startCore({ port: 0, backend: 'fake:happy' })
+    const ws = new WebSocket(`ws://127.0.0.1:${core.port}/ws`)
+    const messages: any[] = []
+    await once(ws, 'open')
+    ws.on('message', (data) => messages.push(JSON.parse(String(data))))
+    // A backend switch leaves no connection; a spawn from queue.clear would broadcast state.
+    ws.send(JSON.stringify({ type: 'backend', id: 'fake:queue-turn' }))
+    await waitFor(() => messages.some((m) => m.key === 'harness'))
+    messages.length = 0
+    ws.send(JSON.stringify({ type: 'queue.clear' }))
+    await new Promise((r) => setTimeout(r, 500))
+    expect(messages).toEqual([])
+    ws.close()
+  })
+
   it('session.new starts a fresh session and broadcasts session.reset', async () => {
     core = await startCore({ port: 0, backend: 'fake:happy' })
     const ws = new WebSocket(`ws://127.0.0.1:${core.port}/ws`)

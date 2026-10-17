@@ -103,6 +103,8 @@ export interface HostState {
   /** What the agent reported it can do (image, fork, …). */
   capabilities: AgentCapabilities
   status: 'idle' | 'streaming' | 'error'
+  /** Prompts waiting behind the in-flight turn. */
+  queued: number
   error?: string
   /** The composer's current text. */
   draft: string

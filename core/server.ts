@@ -692,6 +692,12 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
         return
       }
 
+      if (msg.type === 'queue.clear') {
+        // Never ensureConnection(): clearing an empty queue must not start an agent.
+        conn?.clearQueue()
+        return
+      }
+
       if (msg.type === 'session.new') {
         startNewSession()
         return

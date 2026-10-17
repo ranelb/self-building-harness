@@ -39,6 +39,8 @@ export interface AcpConnection {
   setConfigOption(configId: string, value: string): Promise<void>
   /** Cancel the in-flight turn (a `session/cancel` notification). */
   cancel(): Promise<void>
+  /** Drop the waiting prompts (each promise resolves); the in-flight turn is untouched. Returns how many. */
+  clearQueue(): number
   /** Agent capabilities from `initialize`. */
   capabilities(): AgentCapabilities
   /** Fork the current session; resolves to the new session id. */
@@ -186,6 +188,8 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
   /** One `session/prompt` in flight per connection, ever. `drain()` is its only writer. */
   let inFlight = false
   const queued: QueuedPrompt[] = []
+  /** The depth last published as a `queue` event; emit only on change. */
+  let queueReported = 0
 
   const send = (obj: unknown) => {
     if (closed) return
@@ -334,6 +338,13 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
     return sessionReady
   }
 
+  /** Publish the waiting depth, but only when it changed since the last publish. */
+  const publishQueue = () => {
+    if (queued.length === queueReported) return
+    queueReported = queued.length
+    emit({ type: 'queue', pending: queueReported })
+  }
+
   /**
    * Runs the next queued prompt. The only writer of `inFlight` and the only emitter
    * of `turn.started` / `turn.finished`. `inFlight` is set before the first await.
@@ -342,6 +353,7 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
     if (inFlight) return // re-entrant call from a settling turn
     const next = queued.shift()
     if (!next) return
+    publishQueue()
     inFlight = true
     const turnId = ++turnSequence
     emit({ type: 'turn.started', turnId })
@@ -363,12 +375,14 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
   const enqueue = (entry: QueuedPrompt) => {
     if (!entry.steer) {
       queued.push(entry)
+      publishQueue()
       return
     }
     // Steers keep their arrival order among themselves and stay ahead of follow-ups.
     const at = queued.findIndex((waiting) => !waiting.steer)
     if (at < 0) queued.push(entry)
     else queued.splice(at, 0, entry)
+    publishQueue()
   }
 
   return {
@@ -422,6 +436,14 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
       send({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId } })
     },
 
+    clearQueue() {
+      // Only waiting entries: the in-flight turn is its own promise and keeps running.
+      const dropped = queued.splice(0)
+      dropped.forEach((entry) => entry.resolve())
+      publishQueue()
+      return dropped.length
+    },
+
     capabilities() {
       return capabilitiesValue
     },
@@ -463,6 +485,7 @@ export function connectAcp(opts: ConnectOptions): AcpConnection {
       closed = true
       // Settle every waiting prompt; the in-flight one settles when the child dies.
       queued.splice(0).forEach((entry) => entry.resolve())
+      publishQueue()
       try {
         child.kill()
       } catch {
