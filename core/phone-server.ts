@@ -43,7 +43,7 @@ export interface PhoneServer {
 }
 
 /** Paths the core owns. Everything else is a static file. */
-const CORE_ROUTES = ['/health', '/theme', '/layout', '/components', '/sessions', '/history', '/revert', '/backends']
+const CORE_ROUTES = ['/health', '/theme', '/layout', '/components', '/sessions', '/files', '/history', '/revert', '/backends']
 
 const isCoreRoute = (pathname: string): boolean =>
   CORE_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`))

@@ -125,3 +125,32 @@ describe('core discovery', () => {
     await rm(state, { recursive: true, force: true })
   })
 })
+
+describe('file routes through the phone proxy', () => {
+  it('proxies /files and /files/tree to the core, not the static fallback', async () => {
+    core = createServer((req, res) => {
+      const path = (req.url ?? '').split('?')[0]
+      if (path === '/files' || path === '/files/tree') {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ from: 'core', path }))
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+    await new Promise<void>((resolve) => core!.listen(0, '127.0.0.1', () => resolve()))
+    const corePort = (core.address() as { port: number }).port
+    dir = await builtClient()
+    phone = await startPhoneServer({ coreUrl: `ws://127.0.0.1:${corePort}/ws`, distDir: dir, port: 0 })
+    const base = `http://127.0.0.1:${phone.port}`
+
+    expect(await fetch(`${base}/files?root=%2Fx&path=a.txt`).then((r) => r.json())).toEqual({
+      from: 'core',
+      path: '/files',
+    })
+    expect(await fetch(`${base}/files/tree?root=%2Fx&path=`).then((r) => r.json())).toEqual({
+      from: 'core',
+      path: '/files/tree',
+    })
+  })
+})
