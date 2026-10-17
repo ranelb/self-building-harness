@@ -22,7 +22,17 @@ import {
 } from './profile.ts'
 import { ensureLayoutFile, readLayout } from './layout.ts'
 import { listSessions, readSession, readSessionCost, type SessionSummary } from './sessions.ts'
+import {
+  canonicalRoots,
+  FileAccessError,
+  gitDiff,
+  listTree,
+  readText,
+  type FileErrorReason,
+  type KnownRoot,
+} from './files.ts'
 import { ensureThemeFile, readTheme } from './theme.ts'
+import { ensureStateFile, readState, validateStateEntry, writeState } from './state.ts'
 import { sampleSystem } from './system.ts'
 import { ensureRepo, history, revertLast, snapshot } from './versioning.ts'
 import { watchPaths } from './watch.ts'
@@ -144,10 +154,15 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
   await ensureLayoutFile(configDir)
   await ensureRepo(configDir)
   await ensureComponentsDir(profilesDir(configDir))
+  await ensureStateFile(configDir)
 
   const clients = new Set<WebSocket>()
   /** Which surface each socket declared, for scoped hot-reload. */
   const clientProfiles = new Map<WebSocket, string>()
+  /** The persisted keyed store. The core is its only writer; components only read. */
+  let appState = await readState(configDir)
+  /** Serialize writes so two rapid `state.set` messages cannot interleave on disk. */
+  let stateWrite: Promise<void> = Promise.resolve()
   let conn: AcpConnection | null = null
   /** Set when the next connection should resume a session rather than create one. */
   let resumeTarget: { sessionId: string; cwd: string } | null = null
@@ -180,6 +195,9 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     }
   }
 
+  /** The whole store rides the state channel under one key, so any component reads it. */
+  const publishStore = () => sendToAll({ type: 'state', key: 'store', value: appState })
+
   const backendSpec = (id: string) => {
     if (id.startsWith('fake:')) {
       return { command: process.execPath, args: [FIXTURE, id.slice('fake:'.length)], cwd }
@@ -196,6 +214,8 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     const model = configOptions.find((option) => option.category === 'model')
     return model ? { value: model.currentValue, options: model.options } : { value: '', options: [] }
   }
+  /** The full ACP config option set, so a component can reach any of them. */
+  const configState = () => configOptions
 
   const audit = (entry: Parameters<typeof appendAudit>[1]) => {
     if (auditEnabled) void appendAudit(auditPath, entry)
@@ -303,6 +323,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
       if (event.type === 'config') {
         configOptions = event.options
         sendToAll({ type: 'state', key: 'model', value: modelState() })
+        sendToAll({ type: 'state', key: 'config', value: configState() })
       }
       if (event.type === 'capabilities') {
         // Not a transcript event: publish it on the state channel so the composer
@@ -338,6 +359,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     backendId = id
     sendToAll({ type: 'state', key: 'harness', value: harnessState() })
     sendToAll({ type: 'state', key: 'model', value: modelState() })
+    sendToAll({ type: 'state', key: 'config', value: configState() })
   }
 
   /**
@@ -362,6 +384,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
       conn = null
       resumeTarget = null
       configOptions = []
+      sendToAll({ type: 'state', key: 'config', value: configState() })
       await ensureConnection().open()
       broadcast({ type: 'session.reset', reason: 'new' })
     })()
@@ -403,6 +426,40 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     }
   }
 
+  /**
+   * Directories the file routes may read: the active cwd plus every session's cwd.
+   * Refreshed at most every 5 s. The agent's listing is consulted only when a
+   * connection already exists, so a file read never spawns a backend. The set only
+   * grows; a failed refresh keeps what was known.
+   */
+  const knownGivens = new Set<string>()
+  let knownSet: KnownRoot[] = []
+  let knownAt = -Infinity
+  const knownRoots = async (): Promise<KnownRoot[]> => {
+    if (Date.now() - knownAt < 5000) return knownSet
+    knownAt = Date.now()
+    knownGivens.add(resumeTarget?.cwd ?? cwd)
+    try {
+      const sessions =
+        (conn !== null ? await acpSessions() : null) ?? (await listSessions(sessionsRoot))
+      for (const session of sessions) knownGivens.add(session.cwd)
+    } catch {
+      // keep the roots already known
+    }
+    knownSet = await canonicalRoots([...knownGivens])
+    return knownSet
+  }
+  const fileErrorStatus: Record<FileErrorReason, number> = {
+    'root-not-known': 403,
+    'escapes-root': 403,
+    'absolute-path': 400,
+    'not-a-file': 400,
+    'not-a-dir': 400,
+    missing: 404,
+    'no-git': 409,
+  }
+  const fileHeaders = { 'content-type': 'application/json', 'cache-control': 'no-store' }
+
   const http = createServer((req, res) => {
     // The client appends a cache-buster to module URLs, so parse the query rather
     // than splitting it off. `profile` selects the surface (see core/profile.ts).
@@ -436,6 +493,12 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
         res.writeHead(200, { 'content-type': 'application/json' })
         res.end(JSON.stringify(theme))
       })
+      return
+    }
+
+    if (req.method === 'GET' && url === '/state') {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ state: appState }))
       return
     }
 
@@ -511,6 +574,33 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
       return
     }
 
+    if (req.method === 'GET' && (url === '/files' || url === '/files/tree' || url === '/files/diff')) {
+      const root = requestUrl.searchParams.get('root') ?? ''
+      const path = requestUrl.searchParams.get('path') ?? ''
+      void (async () => {
+        try {
+          const roots = await knownRoots()
+          const body =
+            url === '/files'
+              ? await readText(roots, root, path)
+              : url === '/files/tree'
+                ? await listTree(roots, root, path)
+                : await gitDiff(roots, root, path)
+          res.writeHead(200, fileHeaders)
+          res.end(JSON.stringify(body))
+        } catch (error) {
+          if (error instanceof FileAccessError) {
+            res.writeHead(fileErrorStatus[error.reason], fileHeaders)
+            res.end(JSON.stringify({ error: error.reason }))
+            return
+          }
+          res.writeHead(500, fileHeaders)
+          res.end(JSON.stringify({ error: 'internal' }))
+        }
+      })()
+      return
+    }
+
     if (req.method === 'GET' && url === '/history') {
       void history(configDir).then((commits) => {
         res.writeHead(200, { 'content-type': 'application/json' })
@@ -552,9 +642,11 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     // A fresh client needs the current pickers before it asks anything.
     socket.send(JSON.stringify({ type: 'state', key: 'harness', value: harnessState() }))
     socket.send(JSON.stringify({ type: 'state', key: 'model', value: modelState() }))
+    socket.send(JSON.stringify({ type: 'state', key: 'config', value: configState() }))
     if (capabilitiesState) {
       socket.send(JSON.stringify({ type: 'state', key: 'capabilities', value: capabilitiesState }))
     }
+    socket.send(JSON.stringify({ type: 'state', key: 'store', value: appState }))
     // The model list only arrives with a session (`session/new` carries
     // `configOptions`), so open one now. pi does not write a session file until
     // the first message; goose does create an empty row.
@@ -613,6 +705,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
             conn = null
             resumeTarget = { sessionId: id, cwd }
             configOptions = []
+            sendToAll({ type: 'state', key: 'config', value: configState() })
             await ensureConnection().open()
             broadcast({ type: 'session.reset', reason: 'fork' })
           } catch (error) {
@@ -648,8 +741,29 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
         return
       }
 
+      if (msg.type === 'config' && typeof msg.id === 'string' && typeof msg.value === 'string') {
+        void ensureConnection().setConfigOption(msg.id, msg.value)
+        return
+      }
+
       if (msg.type === 'session.resume' && typeof msg.id === 'string') {
         resumeSession(msg.id, typeof msg.cwd === 'string' ? msg.cwd : '')
+      }
+
+      if (msg.type === 'state.set' && typeof msg.key === 'string') {
+        // The core only validates and persists; a key's meaning is the component's.
+        if (validateStateEntry(msg.key, msg.value) !== null) return
+        const next = { ...appState }
+        if (msg.value === null) delete next[msg.key]
+        else next[msg.key] = msg.value
+        appState = next
+        stateWrite = stateWrite
+          .then(() => writeState(configDir, next))
+          .then(() => {
+            void snapshot(configDir, `sbh: store ${msg.key}`)
+          })
+          .catch(() => {})
+        publishStore()
       }
     })
 
@@ -699,6 +813,17 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
       // `.git` lives inside the watched directory, and committing writes there:
       // without this filter the watcher retriggers on its own snapshots.
       if (changed.startsWith('.git')) return
+      if (changed.endsWith('state.json')) {
+        // The agent can edit the store directly (it owns the config dir); the
+        // core's own writes land here too. Reload and re-broadcast so every
+        // surface converges, then snapshot so an edit is revertable.
+        void readState(configDir).then((next) => {
+          appState = next
+          publishStore()
+          return snapshot(configDir, 'sbh: store changed')
+        })
+        return
+      }
       const change = classifyChange(changed)
       if (!change) return
       void snapshot(configDir, `sbh: ${change.what} changed`).then(() =>

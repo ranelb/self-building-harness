@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import WebSocket from 'ws'
 import { startCore, type Core } from './server.ts'
+import { makeTempRepo, makeTempTree, type TempRepo, type TempTree } from '../test/fixtures/files-fixture.ts'
 
 let core: Core | undefined
 
@@ -293,6 +294,25 @@ describe('pickers and resume', () => {
     ws.close()
   })
 
+  it('sets an arbitrary config option and publishes the full config state', async () => {
+    core = await startCore({ port: 0, backend: 'fake:happy' })
+    const { ws, messages } = await connect()
+    await waitFor(
+      () =>
+        messages.some((m) => m.type === 'state' && m.key === 'config' && m.value?.length > 0)
+    )
+    ws.send(JSON.stringify({ type: 'config', id: 'thought_level', value: 'high' }))
+    await waitFor(() =>
+      messages.some(
+        (m) =>
+          m.type === 'state' &&
+          m.key === 'config' &&
+          m.value?.some((o: any) => o.id === 'thought_level' && o.currentValue === 'high')
+      )
+    )
+    ws.close()
+  })
+
   it('switches backend and streams from the new one', async () => {
     core = await startCore({ port: 0, backend: 'fake:happy' })
     const { ws, messages } = await connect()
@@ -445,8 +465,159 @@ describe('profiles (surfaces)', () => {
   })
 })
 
+describe('state store', () => {
+  it('persists a state.set, broadcasts it, and serves it over HTTP', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sbh-store-'))
+    core = await startCore({ port: 0, backend: 'fake:happy', configDir: dir })
+    const ws = new WebSocket(`ws://127.0.0.1:${core.port}/ws`)
+    const messages: any[] = []
+    // Attach before open: the connect snapshot is sent immediately.
+    ws.on('message', (data) => messages.push(JSON.parse(String(data))))
+    await once(ws, 'open')
+
+    // The whole store is sent on connect, so a component never starts blind.
+    await waitFor(() => messages.some((m) => m.type === 'state' && m.key === 'store'))
+    ws.send(JSON.stringify({ type: 'state.set', key: 'density', value: 'compact' }))
+
+    await waitFor(() =>
+      messages.some((m) => m.type === 'state' && m.key === 'store' && m.value?.density === 'compact')
+    )
+    expect(JSON.parse(await readFile(join(dir, 'state.json'), 'utf8'))).toEqual({ density: 'compact' })
+
+    const http = (await fetch(`http://127.0.0.1:${core.port}/state`).then((r) => r.json())) as any
+    expect(http.state).toEqual({ density: 'compact' })
+    ws.close()
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('rejects an invalid key without touching the store', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sbh-store-'))
+    core = await startCore({ port: 0, backend: 'fake:happy', configDir: dir })
+    const ws = new WebSocket(`ws://127.0.0.1:${core.port}/ws`)
+    await once(ws, 'open')
+    ws.send(JSON.stringify({ type: 'state.set', key: 'bad key', value: 1 }))
+    await new Promise((r) => setTimeout(r, 50))
+    expect(JSON.parse(await readFile(join(dir, 'state.json'), 'utf8'))).toEqual({})
+    ws.close()
+    await rm(dir, { recursive: true, force: true })
+  })
+})
+
 describe('backend validation', () => {
   it('refuses an unknown backend at startup', async () => {
     await expect(startCore({ port: 0, backend: 'nope' })).rejects.toThrow(/not runnable/)
+  })
+})
+
+describe('file routes', () => {
+  let tree: TempTree | undefined
+  let repo: TempRepo | undefined
+
+  afterEach(async () => {
+    await tree?.cleanup()
+    await repo?.cleanup()
+    tree = undefined
+    repo = undefined
+  })
+
+  // No prompt is ever sent: the file routes must answer without an agent.
+  const up = async (cwd: string) => {
+    core = await startCore({ port: 0, backend: 'fake:happy', cwd })
+  }
+  const get = (path: string, headers: Record<string, string> = {}) =>
+    fetch(`http://127.0.0.1:${core!.port}${path}`, { headers })
+  const query = (root: string, path = '') =>
+    `root=${encodeURIComponent(root)}&path=${encodeURIComponent(path)}`
+
+  it('lists a directory, one level, never cached', async () => {
+    tree = await makeTempTree()
+    await up(tree.root)
+    const res = await get(`/files/tree?${query(tree.root)}`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    const body = (await res.json()) as any
+    const names = body.entries.map((e: any) => e.name)
+    expect(names).toEqual(expect.arrayContaining(['a.txt', 'sub', '.hidden']))
+    expect(names).not.toContain('b.ts')
+  })
+
+  it('reads a file', async () => {
+    tree = await makeTempTree()
+    await up(tree.root)
+    const res = await get(`/files?${query(tree.root, 'a.txt')}`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(((await res.json()) as any).text).toBe('hello\nworld\n')
+  })
+
+  it('reports the diff of one path in a repository', async () => {
+    repo = await makeTempRepo()
+    await up(repo.root)
+    const res = await get(`/files/diff?${query(repo.root, 'a.txt')}`)
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as any).patch).toContain('+two')
+  })
+
+  it('refuses a root the session does not know', async () => {
+    tree = await makeTempTree()
+    await up(tree.root)
+    const res = await get(`/files/tree?${query(tmpdir())}`)
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: 'root-not-known' })
+  })
+
+  it('refuses a name-prefix sibling of a known root', async () => {
+    tree = await makeTempTree()
+    await up(tree.root)
+    const res = await get(`/files/tree?${query(tree.sibling)}`)
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: 'root-not-known' })
+  })
+
+  it('refuses .. traversal out of the root', async () => {
+    tree = await makeTempTree()
+    await up(tree.root)
+    const res = await get(`/files?${query(tree.root, '../outside/secret.txt')}`)
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: 'escapes-root' })
+  })
+
+  it('refuses an absolute path even when it points inside the root', async () => {
+    tree = await makeTempTree()
+    await up(tree.root)
+    const res = await get(`/files?${query(tree.root, join(tree.root, 'a.txt'))}`)
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'absolute-path' })
+  })
+
+  it('refuses a symlink that points outside the root', async () => {
+    tree = await makeTempTree()
+    await up(tree.root)
+    const res = await get(`/files?${query(tree.root, 'link-out')}`)
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: 'escapes-root' })
+  })
+
+  it('answers 404 for a missing file', async () => {
+    tree = await makeTempTree()
+    await up(tree.root)
+    const res = await get(`/files?${query(tree.root, 'nope.txt')}`)
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ error: 'missing' })
+  })
+
+  it('answers 409 for a diff outside a repository', async () => {
+    tree = await makeTempTree()
+    await up(tree.root)
+    const res = await get(`/files/diff?${query(tree.root, 'a.txt')}`)
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({ error: 'no-git' })
+  })
+
+  it('refuses a foreign origin on the file routes, under the origin guard', async () => {
+    tree = await makeTempTree()
+    await up(tree.root)
+    const res = await get(`/files/tree?${query(tree.root)}`, { origin: 'https://evil.example' })
+    expect(res.status).toBe(403)
   })
 })
