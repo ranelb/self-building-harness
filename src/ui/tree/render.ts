@@ -57,6 +57,17 @@ export interface Component {
   destroy?(el: Node, node: UiNode, ctx: RenderContext): void
   /** The renderer owns this element's children and reconciles them. */
   container?: boolean
+  /**
+   * The UiEvent kinds this component handles (`'token'`, `'tool'`, ...).
+   *
+   * Declare it as a named export of the component module, alongside `name`:
+   * `export const component = { name, handledEvents: ['token', 'tool'], create }`.
+   * The runtime compares it with the core's `host.schema.kinds` and, when event
+   * kinds are missing, shows a notice inside the component — an override that
+   * predates a new kind would otherwise drop it silently. Omit it and an
+   * *override* of a built-in gets a softer notice; a new component gets none.
+   */
+  handledEvents?: string[]
 }
 
 const components = new Map<string, Component>()
@@ -87,6 +98,15 @@ export function registeredComponents(): string[] {
 /** Needed by hot reload: a component whose file was deleted must stop resolving. */
 export function unregisterComponent(name: string): void {
   components.delete(name)
+  overridden.delete(name)
+}
+
+/** Names of loaded components that replace a built-in of the same name. */
+const overridden = new Set<string>()
+
+/** Record that a loaded component overrides a built-in (see `handledEvents`). */
+export function markOverride(name: string): void {
+  overridden.add(name)
 }
 
 export function resolveComponent(type: string): Component | undefined {
@@ -131,7 +151,54 @@ function mount(node: UiNode, ctx: RenderContext): Node {
   }
 
   if (component.container) reconcileChildren(el, node, ctx)
+  staleNotice(el, component, ctx)
   return el
+}
+
+const STALE = 'data-component-stale'
+
+/**
+ * Show whether `component` is behind the core's event schema.
+ *
+ * Unknown schema (version 0 or no kinds, i.e. before the core's first publish)
+ * shows nothing: flagging on first paint would be a false alarm every launch.
+ * Idempotent: any previous notice is removed before the current one is added,
+ * and nothing here throws, so a notice can never break the component it sits in.
+ */
+function staleNotice(el: Node, component: Component, ctx: RenderContext): void {
+  try {
+    if (!(el instanceof Element)) return
+    for (const child of Array.from(el.children)) {
+      if (child.hasAttribute(STALE)) child.remove()
+    }
+
+    const schema = ctx.host?.schema
+    if (!schema || schema.version === 0 || schema.kinds.length === 0) return
+
+    let marker: string
+    let text: string
+    if (component.handledEvents) {
+      const handled = new Set(component.handledEvents)
+      const missing = schema.kinds.filter((kind) => !handled.has(kind))
+      if (missing.length === 0) return
+      marker = 'true'
+      text = `component is out of date — missing: ${missing.join(', ')}`
+    } else if (overridden.has(component.name)) {
+      marker = 'undeclared'
+      text = 'does not declare handledEvents; new event kinds may be dropped silently'
+    } else {
+      return
+    }
+
+    const notice = document.createElement('div')
+    notice.setAttribute(STALE, marker)
+    notice.textContent = text
+    notice.style.color = ctx.tokens['--sbh-color-textMuted'] ?? 'currentColor'
+    notice.style.fontSize = 'var(--sbh-font-size-sm)'
+    el.appendChild(notice)
+  } catch {
+    // A notice is advisory; failing to draw it must not fail the render.
+  }
 }
 
 /**
@@ -181,6 +248,7 @@ export function patchTree(el: Node, node: UiNode, ctx: RenderContext): Node {
 
   setLive(el, node, ctx)
   if (component.container) reconcileChildren(el, node, ctx)
+  staleNotice(el, component, ctx)
   return el
 }
 

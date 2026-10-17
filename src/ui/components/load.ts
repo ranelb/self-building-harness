@@ -5,7 +5,13 @@
  * not match the contract is reported and skipped, and the built-ins keep working.
  * That is the safe mode — the app is always usable with its own components.
  */
-import { registerComponent, unregisterComponent, type Component } from '../tree/render.ts'
+import {
+  markOverride,
+  registerComponent,
+  resolveComponent,
+  unregisterComponent,
+  type Component,
+} from '../tree/render.ts'
 
 export interface LoadFailure {
   name: string
@@ -60,6 +66,9 @@ const isComponent = (value: unknown): value is Component => {
 /** Names registered by the previous load, so a deletion can be detected. */
 let previouslyLoaded: string[] = []
 
+/** Names this module has registered; one that already resolves and is not here is a built-in being overridden. */
+const loadedFromCore = new Set<string>()
+
 export async function loadComponents(options: LoadOptions): Promise<LoadReport> {
   const doFetch = options.fetchImpl ?? fetch
   const doImport =
@@ -92,7 +101,10 @@ export async function loadComponents(options: LoadOptions): Promise<LoadReport> 
       }
       const component = module?.component ?? module?.default
       if (!isComponent(component)) throw new Error('module does not export a valid component')
+      const overrides = resolveComponent(component.name) !== undefined && !loadedFromCore.has(component.name)
       registerComponent(component)
+      loadedFromCore.add(component.name)
+      if (overrides) markOverride(component.name)
       report.loaded.push(component.name)
     } catch (err) {
       report.failed.push({ name, error: (err as Error).message })
@@ -105,6 +117,7 @@ export async function loadComponents(options: LoadOptions): Promise<LoadReport> 
   for (const name of previouslyLoaded) {
     if (!present.has(name)) {
       unregisterComponent(name)
+      loadedFromCore.delete(name)
       report.removed.push(name)
     }
   }
