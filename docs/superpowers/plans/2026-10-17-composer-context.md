@@ -81,6 +81,6 @@ as a killed-on-demand process group streamed to a tool card, where `!!` cannot r
 
 ### Task 9: Suite, smoke, docs
 - [x] Full suite + `tsc -b`.
-- [ ] Rendered check with Playwright against the LIVE config (the user's transcript override builds from raw events — it must be taught `context` and the shell card, or the smoke will silently miss them). Report screenshots.
+- [x] Rendered check with Playwright against the LIVE config (verified: '[data-item="context"]' row `@a.txt:1-2 · 2 lines` with file lines reaching the agent; '!!echo SECRETLOCAL' card with output and 'local only' tag, secret absent from the following reply; '!echo HI' card with no tag plus composer chip) (the user's transcript override builds from raw events — it must be taught `context` and the shell card, or the smoke will silently miss them). Report screenshots.
 - [x] `PLAN.md`, `docs/design.md`, and amend the spawner invariant in `AGENTS.md` to name both spawn sites. State both honest limits: `!!` hides output from the model, not from other clients; `!` puts whatever the command printed before the model, secrets included.
 - [x] Commit: `docs: mentions resolve in the core, and !! only hides the output from the model`

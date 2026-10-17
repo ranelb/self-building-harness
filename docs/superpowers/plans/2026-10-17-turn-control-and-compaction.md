@@ -182,7 +182,7 @@ Failure modes no happy-path test covers; each gets a test in an owning task.
 
 - [x] **Step 1:** `npx vitest run core/acp/client.test.ts core/events.test.ts core/server.test.ts src/ui/state/transcript.test.ts src/ui/host/transcript.test.ts src/App.test.tsx` — green.
 - [x] **Step 2:** `npx tsc -b` clean; `npm test` green with no network and no model.
-- [ ] **Step 3: Manual smoke, no model:**
+- [x] **Step 3: Manual smoke, no model:** (verified with Playwright against the live config: divider present with 1px hairlines, label 'context compacted', prose ordered around it, sentinel text absent; '1 queued' badge and Queue button while streaming; prompts drained in order)
 
   ```bash
   SBH_BACKEND=fake:queue-turn SBH_PORT=45999 npm run core &

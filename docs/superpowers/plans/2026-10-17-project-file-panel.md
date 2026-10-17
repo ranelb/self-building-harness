@@ -149,7 +149,7 @@ Failure modes the spec implies that no single happy-path test covers; each gets 
 
 - [x] **Step 1:** `npx vitest run core/files.test.ts core/server.test.ts` — green.
 - [x] **Step 2:** `npx tsc -b` — clean; `npm test` — green, with no network and no model (nothing in these tasks calls one).
-- [ ] **Step 3: Manual smoke** per the spec's curl block, with `SBH_BACKEND=fake:happy SBH_CWD="$PWD" SBH_PORT=45999 npm run core &`. Expect 200 / 403 / 400 / 403 in that order. Kill the core afterwards.
+- [x] **Step 3: Manual smoke** per the spec's curl block, with `SBH_BACKEND=fake:happy SBH_CWD="$PWD" SBH_PORT=45999 npm run core &`. Expect 200 / 403 / 400 / 403 in that order. Kill the core afterwards. (verified: /files/tree 200, /files 200 with text, ../../etc/passwd 403 escapes-root, /etc/passwd 400 absolute-path, root=/tmp 403 root-not-known, foreign Origin 403, zero child processes after 18 GETs)
 - [x] **Step 4:** Record the four decisions in `PLAN.md` (status on `/files/tree`; absolute paths refused; escapees listed as `outside`; roots only grow, no spawn) and a paragraph in `docs/design.md`.
 - [x] **Step 5: Commit.** `git commit -m "docs: the core file read path and its confinement rule"`
 
