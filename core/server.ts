@@ -43,6 +43,8 @@ import {
   evaluate,
   loadManifest,
   ROOT_MANIFEST,
+  type Decision,
+  type ToolCallLike,
 } from './capabilities.ts'
 import { isOriginAllowed, resolveAllowedOrigins } from './origin.ts'
 import { expandMentions, maxPromptContextBytes } from './mentions.ts'
@@ -109,6 +111,16 @@ export interface CoreOptions {
 export interface Core {
   port: number
   close(): Promise<void>
+}
+
+/** What the judge is asked: a request (agent or shell) and the capability it is judged as. */
+interface JudgeInput {
+  requestId: string
+  title: string
+  kind?: unknown
+  rawInput?: unknown
+  capability: string
+  source: 'manifest' | 'shell'
 }
 
 export async function startCore(options: CoreOptions = {}): Promise<Core> {
@@ -244,6 +256,43 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
   }
 
   /**
+   * The one judging path: the manifest, the audit line, and the `permission.resolved`
+   * broadcast. Returns `undefined` when the manifest is off, so each caller keeps its
+   * own no-manifest behaviour (the UI for agent requests, spawn for shell commands).
+   * Callers answer the agent or spawn the process; nothing here does either.
+   */
+  const judge = async (input: JudgeInput): Promise<Decision | undefined> => {
+    const { manifest } = await loadManifest({ rootPath: manifestRoot, userPath: manifestUser })
+    auditEnabled = manifest.enabled ? manifest.audit : true
+    if (!manifest.enabled) return undefined
+
+    const classification = {
+      ...classifyToolCall({ kind: input.kind, title: input.title, rawInput: input.rawInput }),
+      capability: input.capability,
+    }
+    const verdict = evaluate(manifest, classification)
+    audit({
+      at: new Date().toISOString(),
+      source: input.source,
+      capability: classification.capability,
+      ...(classification.subject ? { subject: classification.subject } : {}),
+      decision: verdict.decision,
+      reason: verdict.reason,
+      title: input.title,
+    })
+    broadcast({
+      type: 'permission.resolved',
+      requestId: input.requestId,
+      title: input.title,
+      capability: classification.capability,
+      ...(classification.subject ? { subject: classification.subject } : {}),
+      decision: verdict.decision,
+      reason: verdict.reason,
+    })
+    return verdict.decision
+  }
+
+  /**
    * Judge a permission request. With the manifest on, the core answers and the UI
    * is only told the outcome; with it off, the UI decides (or the policy does when
    * nobody is connected). Never leaves the agent hanging.
@@ -252,32 +301,18 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     connection: AcpConnection,
     event: PermissionRequest
   ): Promise<void> => {
-    const { manifest } = await loadManifest({ rootPath: manifestRoot, userPath: manifestUser })
-    auditEnabled = manifest.enabled ? manifest.audit : true
-
-    if (manifest.enabled) {
-      const classification = classifyToolCall(event)
-      const verdict = evaluate(manifest, classification)
-      await respondToPermission(connection, event.requestId, verdict.decision)
+    const call = event as ToolCallLike
+    const decision = await judge({
+      requestId: event.requestId,
+      title: event.title,
+      kind: call.kind,
+      rawInput: call.rawInput,
+      capability: classifyToolCall(call).capability,
+      source: 'manifest',
+    })
+    if (decision !== undefined) {
+      await respondToPermission(connection, event.requestId, decision)
       awaitingUi.delete(event.requestId)
-      audit({
-        at: new Date().toISOString(),
-        source: 'manifest',
-        capability: classification.capability,
-        ...(classification.subject ? { subject: classification.subject } : {}),
-        decision: verdict.decision,
-        reason: verdict.reason,
-        title: event.title,
-      })
-      broadcast({
-        type: 'permission.resolved',
-        requestId: event.requestId,
-        title: event.title,
-        capability: classification.capability,
-        ...(classification.subject ? { subject: classification.subject } : {}),
-        decision: verdict.decision,
-        reason: verdict.reason,
-      })
       return
     }
 
@@ -286,7 +321,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
       const decided = policy({ requestId: event.requestId, title: event.title })
       const decision = decided === 'allow' ? 'allow' : 'deny'
       await respondToPermission(connection, event.requestId, decision)
-      const classification = classifyToolCall(event)
+      const classification = classifyToolCall(call)
       audit({
         at: new Date().toISOString(),
         source: 'unattended',
@@ -301,7 +336,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
 
     awaitingUi.set(event.requestId, {
       title: event.title,
-      capability: classifyToolCall(event).capability,
+      capability: classifyToolCall(call).capability,
     })
     broadcast(event)
   }
@@ -419,7 +454,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
    * is the only record: nothing is buffered here for a later prompt. `includeInContext`
    * is stamped on every event, so no client branch can mistake a `!!` for a `!`.
    */
-  const runUserShell = (command: string, includeInContext: boolean) => {
+  const runUserShell = async (command: string, includeInContext: boolean) => {
     const shellId = 'shell-' + randomUUID()
     const title = (includeInContext ? '!' : '!!') + command
     const tool = (over: Partial<Extract<UiEvent, { type: 'tool' }>>) =>
@@ -432,6 +467,20 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
         includeInContext,
         ...over,
       })
+    // A typed command faces the same manifest as the agent's: judged before anything spawns.
+    // `ask` is a deny here, as everywhere (there is no click-to-allow for a typed command).
+    const verdict = await judge({
+      requestId: shellId,
+      title: command,
+      kind: 'execute',
+      rawInput: { command },
+      capability: 'shell',
+      source: 'shell',
+    })
+    if (verdict === 'deny') {
+      tool({ status: 'failed' })
+      return
+    }
     tool({ status: 'in_progress' })
     const handle = runShell({
       command,
@@ -763,7 +812,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
 
       if (msg.type === 'shell' && typeof msg.command === 'string') {
         if (!msg.command.trim()) return
-        runUserShell(msg.command, msg.includeInContext === true)
+        void runUserShell(msg.command, msg.includeInContext === true)
         return
       }
 

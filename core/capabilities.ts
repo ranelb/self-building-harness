@@ -86,12 +86,25 @@ export function parseManifest(text: string): Manifest {
   const raw: unknown = parseToml(text)
   if (!isRecord(raw)) return { ...DISABLED_MANIFEST }
   const policy = isRecord(raw.policy) ? raw.policy : {}
+  const capabilities = isRecord(raw.capabilities) ? flattenRules(raw.capabilities) : {}
+  // `[capabilities.shell] operator = "…"` judges a typed command (class 'operator') as
+  // the capability `shell.operator`. Absent means allow; it is only recorded when set.
+  const shell = isRecord(raw.capabilities) ? raw.capabilities.shell : undefined
+  if (isRecord(shell) && 'operator' in shell) {
+    const value = shell.operator
+    capabilities[OPERATOR_CAPABILITY] = {
+      decision: value === 'allow' || value === 'ask' ? value : 'deny',
+    }
+  }
   return {
     enabled: policy.enabled === true,
     audit: policy.audit !== false,
-    capabilities: isRecord(raw.capabilities) ? flattenRules(raw.capabilities) : {},
+    capabilities,
   }
 }
+
+/** The capability a typed (operator-class) shell command is judged as. */
+export const OPERATOR_CAPABILITY = 'shell.operator'
 
 async function tryRead(path: string): Promise<string | null> {
   try {
