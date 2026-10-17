@@ -5,9 +5,9 @@
  *
  * Read-only by construction. Nothing in this module writes, stages, or watches.
  */
-import { lstat, readdir, realpath } from 'node:fs/promises'
+import { lstat, open, readdir, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
-import type { FileTreeEntry, FileTreeResponse } from '../shared/protocol.ts'
+import type { FileTextResponse, FileTreeEntry, FileTreeResponse } from '../shared/protocol.ts'
 
 export const maxFileBytes = 1024 * 1024
 export const maxTreeEntries = 2000
@@ -169,5 +169,49 @@ export async function listTree(
     entries,
     truncated,
     status: { git: false, changes: [] },
+  }
+}
+
+/**
+ * A capped read. `text` is the first `maxFileBytes` decoded as UTF-8 (a multi-byte
+ * character cut at the cap decodes as U+FFFD, which is acceptable for a viewer). A
+ * NUL in the first 8 KiB makes the file binary and `text` empty.
+ */
+export async function readText(
+  roots: readonly KnownRoot[],
+  root: string,
+  path: string
+): Promise<FileTextResponse> {
+  const got = await confine(roots, root, path)
+  const st = await stat(got.abs)
+  if (!st.isFile()) throw new FileAccessError('not-a-file')
+
+  const size = st.size
+  let buf: Buffer
+  try {
+    const fh = await open(got.abs, 'r')
+    try {
+      const want = Math.min(size, maxFileBytes)
+      const scratch = Buffer.alloc(want)
+      const { bytesRead } = await fh.read(scratch, 0, want, 0)
+      buf = scratch.subarray(0, bytesRead)
+    } finally {
+      await fh.close()
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code === 'EISDIR') throw new FileAccessError('not-a-file')
+    if (code === 'ENOENT') throw new FileAccessError('missing')
+    throw err
+  }
+
+  const binary = buf.subarray(0, 8192).includes(0)
+  return {
+    root,
+    path: got.rel,
+    size,
+    text: binary ? '' : buf.toString('utf8'),
+    truncated: size > maxFileBytes,
+    binary,
   }
 }

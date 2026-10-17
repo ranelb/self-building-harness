@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { basename, join } from 'node:path'
-import { canonicalRoots, confine, FileAccessError, listTree } from './files.ts'
+import { writeFile } from 'node:fs/promises'
+import { canonicalRoots, confine, FileAccessError, listTree, maxFileBytes, readText } from './files.ts'
 import { makeTempTree, type TempTree } from '../test/fixtures/files-fixture.ts'
 
 /** The reason a promise rejects with, or 'ok' if it resolves. */
@@ -149,5 +150,55 @@ describe('listTree', () => {
     const roots = await canonicalRoots([tree.root])
     const got = await listTree(roots, tree.root, '')
     expect(got.entries[0]).toMatchObject({ name: 'sub', kind: 'dir', size: 0 })
+  })
+})
+
+describe('readText', () => {
+  let tree: TempTree
+
+  beforeEach(async () => {
+    tree = await makeTempTree()
+  })
+  afterEach(async () => {
+    await tree.cleanup()
+  })
+
+  it('reads a text file', async () => {
+    const roots = await canonicalRoots([tree.root])
+    const got = await readText(roots, tree.root, 'a.txt')
+    expect(got).toMatchObject({
+      root: tree.root,
+      path: 'a.txt',
+      size: 12,
+      text: 'hello\nworld\n',
+      truncated: false,
+      binary: false,
+    })
+  })
+
+  it('flags a binary file and returns no text', async () => {
+    const roots = await canonicalRoots([tree.root])
+    const got = await readText(roots, tree.root, 'b.bin')
+    expect(got).toMatchObject({ binary: true, text: '' })
+  })
+
+  it('truncates a file over the cap to a prefix of the cap', async () => {
+    await writeFile(join(tree.root, 'big.txt'), 'a'.repeat(maxFileBytes + 1024))
+    const roots = await canonicalRoots([tree.root])
+    const got = await readText(roots, tree.root, 'big.txt')
+    expect(got.truncated).toBe(true)
+    expect(got.size).toBe(maxFileBytes + 1024)
+    expect(got.text.length).toBeLessThanOrEqual(maxFileBytes)
+    expect(got.text.length).toBe(maxFileBytes)
+  })
+
+  it('refuses a directory', async () => {
+    const roots = await canonicalRoots([tree.root])
+    expect(await reasonOf(readText(roots, tree.root, 'sub'))).toBe('not-a-file')
+  })
+
+  it('refuses a symlink whose target is outside the root', async () => {
+    const roots = await canonicalRoots([tree.root])
+    expect(await reasonOf(readText(roots, tree.root, 'link-out'))).toBe('escapes-root')
   })
 })
