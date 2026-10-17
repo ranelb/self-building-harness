@@ -30,7 +30,10 @@ export const PROTOCOL_VERSION = 1
 /** The model picker's data source; `set_config_option` rewrites `currentValue`. */
 export const FAKE_MODELS = ['model-a', 'model-b', 'model-c'] as const
 
-const configOptions = (currentModel: string) => [
+/** The reasoning-effort picker's data source, a second config option. */
+export const FAKE_THOUGHTS = ['low', 'medium', 'high'] as const
+
+const configOptions = (currentModel: string, currentThought: string) => [
   {
     id: 'model',
     name: 'Model',
@@ -38,6 +41,14 @@ const configOptions = (currentModel: string) => [
     type: 'select',
     currentValue: currentModel,
     options: FAKE_MODELS.map((model) => ({ value: model, name: model.toUpperCase() })),
+  },
+  {
+    id: 'thought_level',
+    name: 'Thinking',
+    category: 'thought_level',
+    type: 'select',
+    currentValue: currentThought,
+    options: FAKE_THOUGHTS.map((level) => ({ value: level, name: level })),
   },
 ]
 
@@ -144,6 +155,7 @@ async function runScenario(
 async function serve(scenario: Scenario): Promise<void> {
   let nextId = 100
   let model: string = FAKE_MODELS[0]
+  let thought: string = FAKE_THOUGHTS[0]
   const pending = new Map<number, (msg: any) => void>()
   let cancelRequested = false
   let resolveCancel: (() => void) | null = null
@@ -196,7 +208,7 @@ async function serve(scenario: Scenario): Promise<void> {
           id: msg.id,
           result: {
             sessionId: SESSION_ID,
-            configOptions: configOptions(model),
+            configOptions: configOptions(model, thought),
             modes: { currentModeId: 'auto', availableModes: [{ id: 'auto', name: 'auto' }] },
           },
         })
@@ -220,7 +232,7 @@ async function serve(scenario: Scenario): Promise<void> {
       case 'session/load': {
         // Loading replays the conversation, then leaves the agent attached to it.
         const loaded = String(msg.params?.sessionId ?? '')
-        write({ jsonrpc: '2.0', id: msg.id, result: { configOptions: configOptions(model) } })
+        write({ jsonrpc: '2.0', id: msg.id, result: { configOptions: configOptions(model, thought) } })
         const replay = (update: unknown) =>
           write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: loaded, update } })
         replay({ sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'earlier question' } })
@@ -233,10 +245,11 @@ async function serve(scenario: Scenario): Promise<void> {
         return
 
       case 'session/set_config_option': {
-        if (typeof msg.params?.value === 'string' && msg.params?.configId === 'model') {
-          model = msg.params.value
+        if (typeof msg.params?.value === 'string') {
+          if (msg.params?.configId === 'model') model = msg.params.value
+          if (msg.params?.configId === 'thought_level') thought = msg.params.value
         }
-        write({ jsonrpc: '2.0', id: msg.id, result: { configOptions: configOptions(model) } })
+        write({ jsonrpc: '2.0', id: msg.id, result: { configOptions: configOptions(model, thought) } })
         return
       }
 

@@ -75,6 +75,10 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
     const baseUrl = httpBaseFromWsUrl(coreUrl)
     const connection = connectStream(coreUrl, PROFILE)
     stream.current = connection
+    // Publish the core URL for agent components (they fetch /components, /theme, …).
+    // The Tauri shell injects `__SBH_CORE_URL__`; the dev server does not, and a
+    // component reading only the global would otherwise see no core at all.
+    ;(globalThis as { __SBH_CORE_URL__?: string }).__SBH_CORE_URL__ = coreUrl
     let cancelled = false
 
     const refreshComponents = () => {
@@ -197,7 +201,14 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
     latest: (el: Node) => getLive(el),
     dispatch(action, payload) {
       const props = payload as
-        | { value?: unknown; requestId?: unknown; id?: unknown; attachment?: Attachment; index?: unknown }
+        | {
+            value?: unknown
+            requestId?: unknown
+            id?: unknown
+            key?: unknown
+            attachment?: Attachment
+            index?: unknown
+          }
         | undefined
 
       switch (action) {
@@ -284,6 +295,15 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
           return
         }
 
+        case 'state.set': {
+          // One key of the persisted store. The core validates, persists and
+          // re-broadcasts the whole store; the component never sees the file.
+          const key = String(props?.key ?? '')
+          if (!key) return
+          stream.current?.send({ type: 'state.set', key, value: props?.value })
+          return
+        }
+
         case 'harness.change': {
           // The core reconnects the ACP session with the new backend.
           stream.current?.send({ type: 'backend', id: String(props?.value ?? '') })
@@ -292,6 +312,14 @@ export function App({ coreUrl = DEFAULT_CORE_URL }: AppProps) {
 
         case 'model.change': {
           stream.current?.send({ type: 'model', id: String(props?.value ?? '') })
+          return
+        }
+
+        case 'config.change': {
+          const id = String(props?.id ?? '')
+          const value = String(props?.value ?? '')
+          if (!id) return
+          stream.current?.send({ type: 'config', id, value })
           return
         }
 

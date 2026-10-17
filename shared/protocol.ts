@@ -42,6 +42,17 @@ export type UiEvent =
       locations?: { path: string; line?: number }[]
       /** ACP ToolCallContent (may carry a diff). */
       content?: unknown
+      /** ACP `rawInput`: the call's arguments, so a card can show what ran. */
+      rawInput?: unknown
+      /**
+       * Incremental terminal output for a running tool, from ACP
+       * `_meta.terminal_output.data`. pi-acp sends *bash* output here, not as
+       * `content`, so without this the UI never sees it. Deltas; a client
+       * accumulates them per `toolCallId`.
+       */
+      outputDelta?: string
+      /** Exit code of a finished terminal tool (`_meta.terminal_exit.exit_code`). */
+      exitCode?: number
     }
   /** A replayed user attachment (non-text content block). */
   | { type: 'attachment'; mimeType: string; name?: string; data?: string; uri?: string }
@@ -108,8 +119,15 @@ export type ClientToCore =
   | { type: 'backend'; id: string }
   /** Set the agent's model config option. */
   | { type: 'model'; id: string }
+  /** Set any other ACP session config option (e.g. `thought_level`). */
+  | { type: 'config'; id: string; value: string }
   /** Load an existing session; the agent replays it as events. */
   | { type: 'session.resume'; id: string; cwd: string }
+  /**
+   * Write one key of the persisted store. `null` deletes it. The core owns the
+   * file and re-broadcasts the whole store on `state` with key `store`.
+   */
+  | { type: 'state.set'; key: string; value: unknown }
   /**
    * Declare which UI surface this client is. One core serves several: a desktop
    * and a phone author different layouts and must not inherit each other's.

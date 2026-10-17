@@ -105,6 +105,7 @@ describe('connectAcp', () => {
     const latest = configs[configs.length - 1]
     expect(latest?.options).toEqual([
       expect.objectContaining({ id: 'model', category: 'model', currentValue: 'model-b' }),
+      expect.objectContaining({ id: 'thought_level', category: 'thought_level' }),
     ])
     conn.close()
   })

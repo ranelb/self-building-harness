@@ -52,6 +52,37 @@ describe('normalizeUpdate', () => {
     ])
   })
 
+  it('forwards rawInput and terminal _meta (bash output) on a tool call', () => {
+    expect(
+      normalizeUpdate({
+        sessionUpdate: 'tool_call',
+        toolCallId: 'b1',
+        title: 'bash',
+        rawInput: { command: 'ls -la' },
+        _meta: { terminal_output: { terminal_id: 'b1', data: 'partial\n' } },
+      })
+    ).toEqual([
+      {
+        type: 'tool',
+        toolCallId: 'b1',
+        title: 'bash',
+        rawInput: { command: 'ls -la' },
+        outputDelta: 'partial\n',
+      },
+    ])
+  })
+
+  it('carries the exit code from terminal_exit', () => {
+    expect(
+      normalizeUpdate({
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'b2',
+        status: 'completed',
+        _meta: { terminal_exit: { terminal_id: 'b2', exit_code: 2, signal: null } },
+      })
+    ).toEqual([{ type: 'tool', toolCallId: 'b2', title: 'tool', status: 'completed', exitCode: 2 }])
+  })
+
   it('maps a tool_call_update to a tool event, so a call can complete', () => {
     expect(
       normalizeUpdate({

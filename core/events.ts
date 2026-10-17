@@ -122,6 +122,17 @@ export function normalizeUpdate(update: unknown): UiEvent[] {
       const locations = readLocations(update.locations)
       if (locations.length > 0) event.locations = locations
       if (update.content !== undefined) event.content = update.content
+      if (update.rawInput !== undefined) event.rawInput = update.rawInput
+      // Terminal tools (bash) report their output through `_meta`, not `content`:
+      // pi-acp streams `terminal_output.data` deltas and a final `terminal_exit`.
+      // Dropping `_meta` is why a bash card could never show what it returned.
+      const meta = isRecord(update._meta) ? update._meta : null
+      if (meta) {
+        const terminal = isRecord(meta.terminal_output) ? meta.terminal_output : null
+        if (terminal && typeof terminal.data === 'string') event.outputDelta = terminal.data
+        const exit = isRecord(meta.terminal_exit) ? meta.terminal_exit : null
+        if (exit && typeof exit.exit_code === 'number') event.exitCode = exit.exit_code
+      }
       return [event]
     }
 

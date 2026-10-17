@@ -78,8 +78,12 @@ is the one genuine gap — anyone who can reach the port drives the agent.
 - **Position virtualization.** The transcript is windowed by count (a bounded DOM),
   not measured; a very tall single message still costs its height, and there is no
   search/jump.
-- **Settings store.** Component state is per-element and `localStorage`; there is no
-  shared, agent-visible, revertable store.
+- **Settings store.** A persisted, agent-visible, revertable keyed store now exists:
+  `core/state.ts` (`state.json` in the config dir, atomic writes), `state.set` /
+  `GET /state`, published to components as `ctx.host.data.store`. The core only
+  validates and persists; keys are a component's convention, not the core's.
+  `~/.config/sbh/components/sbh-settings.js` is the first consumer. Still missing: a
+  typed settings schema and per-profile scoping of the store.
 - **The model list needs a session** to exist, so the core opens one on client
   connect. Under goose that leaves an empty "New Chat" row per run.
 - **The composition of the shipped chrome** is still a small set of built-ins; a
