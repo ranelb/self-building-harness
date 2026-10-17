@@ -55,6 +55,11 @@ export type FileErrorReason =
   | 'not-a-file'
   | 'not-a-dir'
   | 'no-git'
+  /**
+   * A line range that begins past the `maxFileBytes` prefix. The file exists, but the
+   * part asked for was never read, so it is neither `missing` nor an empty window.
+   */
+  | 'beyond-cap'
 
 export class FileAccessError extends Error {
   readonly reason: FileErrorReason
@@ -221,14 +226,28 @@ export async function readText(
   if (!st.isFile()) throw new FileAccessError('not-a-file')
 
   const size = st.size
-  let buf: Buffer
+  const buf = await readHead(got.abs, size)
+
+  const binary = isBinary(buf)
+  return {
+    root,
+    path: got.rel,
+    size,
+    text: binary ? '' : buf.toString('utf8'),
+    truncated: size > maxFileBytes,
+    binary,
+  }
+}
+
+/** The first `maxFileBytes` of a file. The only place a file's bytes are read. */
+async function readHead(abs: string, size: number): Promise<Buffer> {
   try {
-    const fh = await open(got.abs, 'r')
+    const fh = await open(abs, 'r')
     try {
       const want = Math.min(size, maxFileBytes)
       const scratch = Buffer.alloc(want)
       const { bytesRead } = await fh.read(scratch, 0, want, 0)
-      buf = scratch.subarray(0, bytesRead)
+      return scratch.subarray(0, bytesRead)
     } finally {
       await fh.close()
     }
@@ -238,15 +257,74 @@ export async function readText(
     if (code === 'ENOENT') throw new FileAccessError('missing')
     throw err
   }
+}
 
-  const binary = buf.subarray(0, 8192).includes(0)
+/** A NUL in the first 8 KiB makes a file binary. */
+const isBinary = (buf: Buffer): boolean => buf.subarray(0, 8192).includes(0)
+
+export interface FileLinesResponse {
+  root: string
+  path: string
+  size: number
+  /** 1-based, inclusive. When `startLine > endLine` the window is empty. */
+  startLine: number
+  endLine: number
+  /** Null when the file is over the cap: the lines past the prefix were never read. */
+  totalLines: number | null
+  lines: string[]
+  truncated: boolean
+  binary: boolean
+}
+
+/**
+ * A line window of a text file, read through the same gate and the same capped,
+ * NUL-probed read as `readText`. Lines split on `\n` with a trailing `\r` stripped; a
+ * trailing newline does not make a phantom last line. A range that begins past the
+ * capped prefix throws `beyond-cap` rather than answering with an empty window that
+ * would look like the end of the file.
+ */
+export async function readLines(
+  roots: readonly KnownRoot[],
+  root: string,
+  path: string,
+  range: { start?: number; end?: number } = {}
+): Promise<FileLinesResponse> {
+  const got = await confine(roots, root, path)
+  const st = await stat(got.abs)
+  if (!st.isFile()) throw new FileAccessError('not-a-file')
+
+  const size = st.size
+  const buf = await readHead(got.abs, size)
+  const truncated = size > maxFileBytes
+  const base = { root, path: got.rel, size, truncated }
+
+  if (isBinary(buf)) {
+    return { ...base, startLine: 1, endLine: 0, totalLines: null, lines: [], binary: true }
+  }
+
+  const text = buf.toString('utf8')
+  const lines = text.split('\n')
+  // A trailing newline ends the last line; it does not open a new one. Over the cap the
+  // final segment may be cut mid-line, so it is dropped too.
+  if (lines[lines.length - 1] === '') lines.pop()
+  else if (truncated) lines.pop()
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? ''
+    if (line.endsWith('\r')) lines[i] = line.slice(0, -1)
+  }
+
+  const start = Math.max(1, range.start ?? 1)
+  if (truncated && start > lines.length) throw new FileAccessError('beyond-cap')
+  const endLine = Math.min(range.end ?? lines.length, lines.length)
+  const window = endLine >= start ? lines.slice(start - 1, endLine) : []
+
   return {
-    root,
-    path: got.rel,
-    size,
-    text: binary ? '' : buf.toString('utf8'),
-    truncated: size > maxFileBytes,
-    binary,
+    ...base,
+    startLine: start,
+    endLine,
+    totalLines: truncated ? null : lines.length,
+    lines: window,
+    binary: false,
   }
 }
 

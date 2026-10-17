@@ -457,6 +457,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
     'not-a-dir': 400,
     missing: 404,
     'no-git': 409,
+    'beyond-cap': 416,
   }
   const fileHeaders = { 'content-type': 'application/json', 'cache-control': 'no-store' }
 

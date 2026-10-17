@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { basename, join } from 'node:path'
 import { writeFile } from 'node:fs/promises'
 import { makeTempRepo, git as gitRun, type TempRepo } from '../test/fixtures/files-fixture.ts'
-import { canonicalRoots, confine, FileAccessError, gitDiff, gitStatus, listTree, maxFileBytes, readText } from './files.ts'
+import { canonicalRoots, confine, FileAccessError, gitDiff, gitStatus, listTree, maxFileBytes, readLines, readText } from './files.ts'
 import { makeTempTree, type TempTree } from '../test/fixtures/files-fixture.ts'
 
 /** The reason a promise rejects with, or 'ok' if it resolves. */
@@ -334,5 +334,120 @@ describe('gitDiff', () => {
     } finally {
       await tree.cleanup()
     }
+  })
+})
+
+describe('readLines', () => {
+  let tree: TempTree
+
+  beforeEach(async () => {
+    tree = await makeTempTree()
+  })
+  afterEach(async () => {
+    await tree.cleanup()
+  })
+
+  it('does not invent a phantom line for a trailing newline', async () => {
+    const roots = await canonicalRoots([tree.root])
+    const got = await readLines(roots, tree.root, 'a.txt')
+    expect(got).toMatchObject({
+      root: tree.root,
+      path: 'a.txt',
+      startLine: 1,
+      endLine: 2,
+      totalLines: 2,
+      lines: ['hello', 'world'],
+      truncated: false,
+      binary: false,
+    })
+  })
+
+  it('strips a trailing carriage return from each line', async () => {
+    await writeFile(join(tree.root, 'crlf.txt'), 'a\r\nb\r\n')
+    const roots = await canonicalRoots([tree.root])
+    expect((await readLines(roots, tree.root, 'crlf.txt')).lines).toEqual(['a', 'b'])
+  })
+
+  it('keeps a final line that has no trailing newline', async () => {
+    await writeFile(join(tree.root, 'nonl.txt'), 'a\nb')
+    const roots = await canonicalRoots([tree.root])
+    expect((await readLines(roots, tree.root, 'nonl.txt')).lines).toEqual(['a', 'b'])
+  })
+
+  it('returns a 1-based inclusive window', async () => {
+    await writeFile(join(tree.root, 'four.txt'), 'l1\nl2\nl3\nl4\n')
+    const roots = await canonicalRoots([tree.root])
+    expect(await readLines(roots, tree.root, 'four.txt', { start: 2, end: 3 })).toMatchObject({
+      startLine: 2,
+      endLine: 3,
+      totalLines: 4,
+      lines: ['l2', 'l3'],
+    })
+  })
+
+  it('clamps a start below 1 to line 1', async () => {
+    await writeFile(join(tree.root, 'four.txt'), 'l1\nl2\n')
+    const roots = await canonicalRoots([tree.root])
+    expect(await readLines(roots, tree.root, 'four.txt', { start: 0, end: 1 })).toMatchObject({
+      startLine: 1,
+      endLine: 1,
+      lines: ['l1'],
+    })
+  })
+
+  it('returns an empty window with startLine > endLine past the end', async () => {
+    const roots = await canonicalRoots([tree.root])
+    const got = await readLines(roots, tree.root, 'a.txt', { start: 10 })
+    expect(got.lines).toEqual([])
+    expect(got.startLine).toBeGreaterThan(got.endLine)
+    expect(got.totalLines).toBe(2)
+  })
+
+  it('returns no lines for a binary file', async () => {
+    const roots = await canonicalRoots([tree.root])
+    expect(await readLines(roots, tree.root, 'b.bin')).toMatchObject({
+      binary: true,
+      lines: [],
+    })
+  })
+
+  it('a file over the cap is truncated, has no total, and keeps only whole lines', async () => {
+    await writeFile(join(tree.root, 'big.txt'), 'abcdefgh\n'.repeat(Math.ceil(maxFileBytes / 9) + 10))
+    const roots = await canonicalRoots([tree.root])
+    const got = await readLines(roots, tree.root, 'big.txt')
+    expect(got.truncated).toBe(true)
+    expect(got.totalLines).toBeNull()
+    expect(got.lines.length).toBeGreaterThan(0)
+    expect(got.lines.every((l) => l === 'abcdefgh')).toBe(true)
+  })
+
+  it('refuses a range that lies entirely past the capped prefix', async () => {
+    await writeFile(join(tree.root, 'big.txt'), 'a\n'.repeat(maxFileBytes))
+    const roots = await canonicalRoots([tree.root])
+    expect(await reasonOf(readLines(roots, tree.root, 'big.txt', { start: maxFileBytes + 5 }))).toBe(
+      'beyond-cap'
+    )
+  })
+
+  it('refuses a directory', async () => {
+    const roots = await canonicalRoots([tree.root])
+    expect(await reasonOf(readLines(roots, tree.root, 'sub'))).toBe('not-a-file')
+  })
+
+  it('refuses a symlink whose target is outside the root', async () => {
+    const roots = await canonicalRoots([tree.root])
+    expect(await reasonOf(readLines(roots, tree.root, 'link-out'))).toBe('escapes-root')
+  })
+
+  it('refuses an absolute path', async () => {
+    const roots = await canonicalRoots([tree.root])
+    expect(await reasonOf(readLines(roots, tree.root, join(tree.root, 'a.txt')))).toBe(
+      'absolute-path'
+    )
+  })
+
+  it('reports a missing file', async () => {
+    const roots = await canonicalRoots([tree.root])
+    expect(await reasonOf(readLines(roots, tree.root, 'nope.txt'))).toBe('missing')
   })
 })
