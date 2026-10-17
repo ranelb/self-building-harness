@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest'
 import '../atoms/index.ts'
+import { UI_EVENT_KINDS } from '../../../shared/protocol.ts'
 import {
   markOverride,
   registerComponent,
@@ -172,13 +173,67 @@ describe('renderTree', () => {
       expect(found[0]!.textContent).toBe('component is out of date — missing: tool, queue')
     })
 
-    it('shows no notice for a component with full coverage', () => {
+    it('shows no notice when handled and unhandled together cover the schema', () => {
       registerComponent({
         name: 'stale-full',
-        handledEvents: [...KINDS],
+        handledEvents: ['token', 'tool'],
+        unhandledEvents: ['queue'],
         create: () => document.createElement('div'),
       })
       const el = renderTree({ type: 'stale-full' }, withSchema(2, KINDS))
+      expect(notices(el).length).toBe(0)
+    })
+
+    it('shows no notice when the full 18-kind schema is declared across both lists', () => {
+      const ALL = [...UI_EVENT_KINDS]
+      registerComponent({
+        name: 'stale-all18',
+        handledEvents: ALL.slice(0, 8),
+        unhandledEvents: ALL.slice(8),
+        create: () => document.createElement('div'),
+      })
+      expect(ALL.length).toBe(18)
+      const el = renderTree({ type: 'stale-all18' }, withSchema(2, ALL))
+      expect(notices(el).length).toBe(0)
+    })
+
+    it('is idempotent with both lists declared', () => {
+      registerComponent({
+        name: 'stale-idem',
+        handledEvents: ['token'],
+        unhandledEvents: ['queue'],
+        create: () => document.createElement('div'),
+        update: () => {},
+      })
+      const parent = document.createElement('div')
+      const c = withSchema(2, KINDS)
+      renderInto(parent, { type: 'stale-idem' }, c)
+      renderInto(parent, { type: 'stale-idem' }, c)
+      expect(notices(parent).length).toBe(1)
+      expect(notices(parent)[0]!.textContent).toBe('component is out of date — missing: tool')
+    })
+
+    it('names exactly a kind that is in neither list', () => {
+      registerComponent({
+        name: 'stale-neither',
+        handledEvents: ['token'],
+        unhandledEvents: ['queue'],
+        create: () => document.createElement('div'),
+      })
+      const el = renderTree({ type: 'stale-neither' }, withSchema(2, KINDS)) as HTMLElement
+      const found = notices(el)
+      expect(found.length).toBe(1)
+      expect(found[0]!.textContent).toBe('component is out of date — missing: tool')
+    })
+
+    it('does not flag a kind the component deliberately ignores', () => {
+      registerComponent({
+        name: 'stale-ignores',
+        handledEvents: ['token', 'tool'],
+        unhandledEvents: ['queue'],
+        create: () => document.createElement('div'),
+      })
+      const el = renderTree({ type: 'stale-ignores' }, withSchema(2, KINDS))
       expect(notices(el).length).toBe(0)
     })
 
@@ -189,7 +244,7 @@ describe('renderTree', () => {
       const found = notices(el)
       expect(found.length).toBe(1)
       expect(found[0]!.getAttribute('data-component-stale')).toBe('undeclared')
-      expect(found[0]!.textContent).toContain('does not declare handledEvents')
+      expect(found[0]!.textContent).toContain('does not declare handledEvents or unhandledEvents')
     })
 
     it('stays at one notice across re-renders and keeps the component output', () => {

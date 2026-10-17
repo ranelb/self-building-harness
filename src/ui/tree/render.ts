@@ -58,16 +58,23 @@ export interface Component {
   /** The renderer owns this element's children and reconciles them. */
   container?: boolean
   /**
-   * The UiEvent kinds this component handles (`'token'`, `'tool'`, ...).
+   * Every UiEvent kind (`host.schema.kinds`) must be accounted for by exactly
+   * one of two lists, and anything in neither is "new to the schema":
    *
-   * Declare it as a named export of the component module, alongside `name`:
-   * `export const component = { name, handledEvents: ['token', 'tool'], create }`.
-   * The runtime compares it with the core's `host.schema.kinds` and, when event
-   * kinds are missing, shows a notice inside the component — an override that
-   * predates a new kind would otherwise drop it silently. Omit it and an
+   * - `handledEvents` — kinds the component renders.
+   * - `unhandledEvents` — kinds it DELIBERATELY does not render (usage, config, ...).
+   * - anything else — missing: the core added it and the component has not decided.
+   *
+   * Declare both as named exports of the component module, alongside `name`:
+   * `export const component = { name, handledEvents: [...], unhandledEvents: [...], create }`.
+   * When kinds are missing the runtime shows a notice inside the component, so an
+   * override that predates a new kind does not drop it silently. Declare both lists
+   * and the notice fires only for kinds in neither. Declare neither and an
    * *override* of a built-in gets a softer notice; a new component gets none.
    */
   handledEvents?: string[]
+  /** Kinds the component deliberately ignores; see `handledEvents`. */
+  unhandledEvents?: string[]
 }
 
 const components = new Map<string, Component>()
@@ -177,15 +184,16 @@ function staleNotice(el: Node, component: Component, ctx: RenderContext): void {
 
     let marker: string
     let text: string
-    if (component.handledEvents) {
-      const handled = new Set(component.handledEvents)
-      const missing = schema.kinds.filter((kind) => !handled.has(kind))
+    if (component.handledEvents || component.unhandledEvents) {
+      // Declared kinds, rendered or deliberately ignored, are accounted for; the rest are new.
+      const declared = new Set([...(component.handledEvents ?? []), ...(component.unhandledEvents ?? [])])
+      const missing = schema.kinds.filter((kind) => !declared.has(kind))
       if (missing.length === 0) return
       marker = 'true'
       text = `component is out of date — missing: ${missing.join(', ')}`
     } else if (overridden.has(component.name)) {
       marker = 'undeclared'
-      text = 'does not declare handledEvents; new event kinds may be dropped silently'
+      text = 'does not declare handledEvents or unhandledEvents; new event kinds may be dropped silently'
     } else {
       return
     }
