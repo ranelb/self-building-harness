@@ -11,6 +11,7 @@ import { isAbsolute, join, posix, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import type {
   FileChange,
+  FileDiffResponse,
   FileStatus,
   FileTextResponse,
   FileTreeEntry,
@@ -299,4 +300,41 @@ export async function gitStatus(
   }
 
   return { root, git: true, changes }
+}
+
+/**
+ * One path, three states. The work-tree diff first; if that is empty, the staged diff
+ * (the change is fully staged); if still empty, the status decides whether the file is
+ * untracked. The path is a literal pathspec after `--`, so a name with `*` or a leading
+ * `-` is a path, never a glob or a flag. Any git failure is `no-git`.
+ */
+export async function gitDiff(
+  roots: readonly KnownRoot[],
+  root: string,
+  path: string
+): Promise<FileDiffResponse> {
+  const got = await confine(roots, root, path)
+  // The git repository is the confined root; the pathspec is relative to it.
+  const spec = got.rel === '' ? '.' : `:(literal)${got.rel}`
+  const cap = (text: string) => Buffer.from(text).subarray(0, maxFileBytes).toString('utf8')
+
+  try {
+    let patch = await runGit(got.root, ['diff', '--no-color', '--', spec])
+    let staged = false
+    if (patch === '') {
+      const cached = await runGit(got.root, ['diff', '--no-color', '--cached', '--', spec])
+      if (cached !== '') {
+        patch = cached
+        staged = true
+      }
+    }
+    let untracked = false
+    if (patch === '') {
+      const status = await runGit(got.root, ['status', '--porcelain=v1', '--', spec])
+      untracked = status.startsWith('??')
+    }
+    return { root, path: got.rel, patch: cap(patch), untracked, staged }
+  } catch {
+    throw new FileAccessError('no-git')
+  }
 }

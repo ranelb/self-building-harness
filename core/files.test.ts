@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { basename, join } from 'node:path'
 import { writeFile } from 'node:fs/promises'
 import { makeTempRepo, git as gitRun, type TempRepo } from '../test/fixtures/files-fixture.ts'
-import { canonicalRoots, confine, FileAccessError, gitStatus, listTree, maxFileBytes, readText } from './files.ts'
+import { canonicalRoots, confine, FileAccessError, gitDiff, gitStatus, listTree, maxFileBytes, readText } from './files.ts'
 import { makeTempTree, type TempTree } from '../test/fixtures/files-fixture.ts'
 
 /** The reason a promise rejects with, or 'ok' if it resolves. */
@@ -273,6 +273,66 @@ describe('listTree status', () => {
       expect(got.status.changes).toContainEqual({ path: 'a.txt', index: ' ', worktree: 'M' })
     } finally {
       await repo.cleanup()
+    }
+  })
+})
+
+describe('gitDiff', () => {
+  let repo: TempRepo
+
+  beforeEach(async () => {
+    repo = await makeTempRepo()
+  })
+  afterEach(async () => {
+    await repo.cleanup()
+  })
+
+  it('diffs a modified file against the index', async () => {
+    const roots = await canonicalRoots([repo.root])
+    const got = await gitDiff(roots, repo.root, 'a.txt')
+    expect(got).toMatchObject({ root: repo.root, path: 'a.txt', untracked: false, staged: false })
+    expect(got.patch).toContain('+two')
+    expect(got.patch).toContain('@@')
+  })
+
+  it('falls back to the index for a staged-only change', async () => {
+    await gitRun(repo.root, ['add', 'a.txt'])
+    const roots = await canonicalRoots([repo.root])
+    const got = await gitDiff(roots, repo.root, 'a.txt')
+    expect(got.staged).toBe(true)
+    expect(got.patch).toContain('+two')
+  })
+
+  it('marks an untracked file without inventing a patch', async () => {
+    const roots = await canonicalRoots([repo.root])
+    const got = await gitDiff(roots, repo.root, 'new.txt')
+    expect(got).toMatchObject({ untracked: true, patch: '' })
+  })
+
+  it('treats a name starting with a dash as a path, not a flag', async () => {
+    await writeFile(join(repo.root, '-flag.txt'), 'x\n')
+    const roots = await canonicalRoots([repo.root])
+    const got = await gitDiff(roots, repo.root, '-flag.txt')
+    expect(got.untracked).toBe(true)
+  })
+
+  it('reports no-git outside a repository', async () => {
+    const tree = await makeTempTree()
+    try {
+      const roots = await canonicalRoots([tree.root])
+      expect(await reasonOf(gitDiff(roots, tree.root, 'a.txt'))).toBe('no-git')
+    } finally {
+      await tree.cleanup()
+    }
+  })
+
+  it('refuses a path outside the root', async () => {
+    const tree = await makeTempTree()
+    try {
+      const roots = await canonicalRoots([tree.root])
+      expect(await reasonOf(gitDiff(roots, tree.root, 'link-out'))).toBe('escapes-root')
+    } finally {
+      await tree.cleanup()
     }
   })
 })
