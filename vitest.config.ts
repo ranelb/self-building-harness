@@ -8,6 +8,6 @@ export default defineConfig({
     // a `// @vitest-environment happy-dom` docblock. happy-dom's fetch enforces
     // same-origin and would block core tests from reaching their own server.
     environment: 'node',
-    include: ['src/**/*.test.{ts,tsx}', 'core/**/*.test.ts', 'test/**/*.test.ts'],
+    include: ['src/**/*.test.{ts,tsx}', 'core/**/*.test.ts', 'test/**/*.test.ts', 'shared/**/*.test.ts'],
   },
 })
