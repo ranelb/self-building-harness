@@ -42,6 +42,7 @@ import {
   classifyToolCall,
   evaluate,
   loadManifest,
+  OPERATOR_CAPABILITY,
   ROOT_MANIFEST,
   type Decision,
   type ToolCallLike,
@@ -121,6 +122,8 @@ interface JudgeInput {
   rawInput?: unknown
   capability: string
   source: 'manifest' | 'shell'
+  /** A typed command: judged as `shell.operator` (default allow) unless that key is `deny`. */
+  operator?: boolean
 }
 
 export async function startCore(options: CoreOptions = {}): Promise<Core> {
@@ -262,13 +265,25 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
    * Callers answer the agent or spawn the process; nothing here does either.
    */
   const judge = async (input: JudgeInput): Promise<Decision | undefined> => {
-    const { manifest } = await loadManifest({ rootPath: manifestRoot, userPath: manifestUser })
-    auditEnabled = manifest.enabled ? manifest.audit : true
-    if (!manifest.enabled) return undefined
+    const { manifest: loaded } = await loadManifest({ rootPath: manifestRoot, userPath: manifestUser })
+    auditEnabled = loaded.enabled ? loaded.audit : true
+    if (!loaded.enabled) return undefined
+
+    let manifest = loaded
+    let capability = input.capability
+    if (input.operator && loaded.capabilities[OPERATOR_CAPABILITY]?.decision !== 'deny') {
+      // The operator's own typing: `shell.operator`, absent means allow. Only an explicit
+      // `operator = "deny"` hands the command to the agent's `shell` rule instead.
+      capability = OPERATOR_CAPABILITY
+      manifest = {
+        ...loaded,
+        capabilities: { [OPERATOR_CAPABILITY]: { decision: 'allow' }, ...loaded.capabilities },
+      }
+    }
 
     const classification = {
       ...classifyToolCall({ kind: input.kind, title: input.title, rawInput: input.rawInput }),
-      capability: input.capability,
+      capability,
     }
     const verdict = evaluate(manifest, classification)
     audit({
@@ -467,8 +482,10 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
         includeInContext,
         ...over,
       })
-    // A typed command faces the same manifest as the agent's: judged before anything spawns.
-    // `ask` is a deny here, as everywhere (there is no click-to-allow for a typed command).
+    // A typed command is judged before anything spawns: as the operator (`shell.operator`,
+    // default allow), or as the agent's `shell` rule when `operator = "deny"`. Policy, not a
+    // boundary: any client that reaches the core can send a `shell` message.
+    // `ask` is a deny here (there is no click-to-allow for a typed command).
     const verdict = await judge({
       requestId: shellId,
       title: command,
@@ -476,6 +493,7 @@ export async function startCore(options: CoreOptions = {}): Promise<Core> {
       rawInput: { command },
       capability: 'shell',
       source: 'shell',
+      operator: true,
     })
     if (verdict === 'deny') {
       tool({ status: 'failed' })

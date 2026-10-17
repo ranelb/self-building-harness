@@ -824,3 +824,117 @@ describe('core server: ! and !! shell', () => {
     t.ws.close()
   })
 })
+
+// Documented limitation: `operator` defaults to allow, so any client that can reach the core,
+// including an agent-authored component (which can open its own WebSocket), can run shell
+// despite a `shell` deny. The key exists to let the operator's own typing through. It is a
+// policy, not a privilege boundary; set `operator = "deny"` to close it.
+describe('capability manifest: a typed command and the operator key', () => {
+  let dir: string | undefined
+
+  afterEach(async () => {
+    if (dir) await rm(dir, { recursive: true, force: true })
+    dir = undefined
+  })
+
+  const setup = async (body: string) => {
+    dir = await mkdtemp(join(tmpdir(), 'sbh-operator-'))
+    const user = join(dir, 'capabilities.toml')
+    await writeFile(user, body)
+    const tree = await makeTempTree()
+    const auditPath = join(dir, 'audit.log')
+    core = await startCore({
+      port: 0,
+      backend: 'fake:happy',
+      cwd: tree.root,
+      manifestRoot: join(dir, 'absent-root.toml'),
+      manifestUser: user,
+      auditPath,
+    })
+    const port = core.port
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`)
+    const messages: any[] = []
+    ws.on('message', (data) => messages.push(JSON.parse(String(data))))
+    await once(ws, 'open')
+    const events = () => messages.filter((m) => m.event).map((m) => m.event)
+    const tools = () => events().filter((e) => e.type === 'tool')
+    const settled = () => tools().some((t) => t.status === 'completed' || t.status === 'failed')
+    const resolved = () => events().filter((e) => e.type === 'permission.resolved')
+    const output = () => tools().map((t) => t.outputDelta ?? '').join('')
+    const audit = async () =>
+      (await readFile(auditPath, 'utf8').catch(() => ''))
+        .split('\n')
+        .filter(Boolean)
+        .map((l) => JSON.parse(l))
+    const untilAudit = async (n: number) => {
+      const started = Date.now()
+      while ((await audit()).length < n) {
+        if (Date.now() - started > 8000) throw new Error('timed out waiting for audit')
+        await new Promise((r) => setTimeout(r, 20))
+      }
+    }
+    const send = (command: string) =>
+      ws.send(JSON.stringify({ type: 'shell', command, includeInContext: true }))
+    return { ws, port, tree, events, tools, settled, resolved, output, audit, untilAudit, send }
+  }
+
+  const DENY = '[policy]\nenabled = true\n[capabilities.shell]\ndecision = "deny"\n'
+
+  it('a manifest deny for shell does not block a typed command by default', async () => {
+    const t = await setup(DENY)
+    t.send('echo hi')
+    await waitFor(t.settled)
+    expect(t.resolved().at(-1)).toMatchObject({ capability: 'shell.operator', decision: 'allow' })
+    expect(t.tools().at(-1)).toMatchObject({ status: 'completed' })
+    expect(t.output()).toContain('hi')
+    t.ws.close()
+  })
+
+  it('operator = "deny" makes a typed command face the normal manifest', async () => {
+    const t = await setup(DENY + 'operator = "deny"\n')
+    t.send('echo hi')
+    await waitFor(t.settled)
+    expect(t.resolved().at(-1)).toMatchObject({ capability: 'shell', subject: 'echo hi', decision: 'deny' })
+    expect(t.tools().at(-1)).toMatchObject({ status: 'failed', title: '!echo hi' })
+    expect(t.output()).toBe('')
+    await t.untilAudit(1)
+    expect((await t.audit())[0]).toMatchObject({ source: 'shell', capability: 'shell', decision: 'deny' })
+    t.ws.close()
+  })
+
+  it('a manifest allows a scoped command and refuses the rest', async () => {
+    const t = await setup('[policy]\nenabled = true\n[capabilities.shell]\ndecision = "allow"\ncommands = ["echo *"]\noperator = "deny"\n')
+    t.send('echo hi')
+    await waitFor(t.settled)
+    expect(t.output()).toContain('hi')
+    t.send('touch x')
+    await waitFor(() => t.tools().some((x) => x.title === '!touch x' && x.status === 'failed'))
+    expect(t.resolved().at(-1)).toMatchObject({ capability: 'shell', subject: 'touch x', decision: 'deny' })
+    t.ws.close()
+  })
+
+  it('the agent class is unaffected by the operator key', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'sbh-operator-'))
+    const user = join(dir, 'capabilities.toml')
+    await writeFile(user, DENY + 'operator = "allow"\n')
+    core = await startCore({
+      port: 0,
+      backend: 'fake:permission',
+      manifestRoot: join(dir, 'absent-root.toml'),
+      manifestUser: user,
+      auditPath: join(dir, 'audit.log'),
+    })
+    const ws = new WebSocket(`ws://127.0.0.1:${core.port}/ws`)
+    const messages: any[] = []
+    await once(ws, 'open')
+    ws.on('message', (data) => messages.push(JSON.parse(String(data))))
+    ws.send(JSON.stringify({ type: 'prompt', text: 'go' }))
+    await waitFor(() => messages.some((m) => m.event?.type === 'permission.resolved'))
+    // The agent's request is judged as `shell` (no operator path): the deny stands.
+    expect(messages.find((m) => m.event?.type === 'permission.resolved').event).toMatchObject({
+      capability: 'shell',
+      decision: 'deny',
+    })
+    ws.close()
+  })
+})

@@ -174,6 +174,13 @@ card native; it is to stop pretending the card is the boundary.
   the root-side `sbh-policy` CLI.
 - **SBH never elevates itself.** `sbh-policy` is run under pkexec, sudo, doas or a
   root shell; the app names no elevator.
+- **The operator key lets typed commands through.** A `!`/`!!` command is judged as
+  `shell.operator`, which defaults to allow, so a `shell` deny does not stop the
+  operator's own typing; `operator = "deny"` makes typed commands face the normal
+  `shell` rule. This is a policy, not a boundary: any client that can reach the core,
+  including an agent-authored component, can send a shell command, so set
+  `operator = "deny"` to close it. No token is involved, because a token would have to
+  cross the same socket every component can open.
 
 Read the reasoning in full: the key principle is that **a toggle the policed party
 enforces is not a toggle**, so authority — not presentation — is what lives
