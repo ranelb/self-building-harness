@@ -134,11 +134,11 @@ Failure modes no happy-path test covers; each gets a test in an owning task.
 - Produces: fixture scenario `'compaction'` — four chunks: `"before "`, the start sentinel, the end sentinel, `"after"`.
 - Consumes: nothing (parallel with Tasks 1-4).
 
-- [ ] **Step 1: Write the failing tests.** `core/events.test.ts`: `it('turns a compaction sentinel into a compaction event, not text')` for both literals, and `it('leaves a sentence that mentions compaction alone')` (the end sentence plus `' ok'` stays a `chunk`). `core/acp/client.test.ts`: `it('emits a compaction event and no sentinel prose')` — joined chunk text is `'before after'`, phases `['start', 'end']`.
-- [ ] **Step 2: Run them.** `npx vitest run core/events.test.ts -t 'compaction'` — FAIL.
-- [ ] **Step 3: Implement** the constants, `compactionPhase`, and the branch in `agent_message_chunk` that returns the event instead of the chunk. Add the fixture scenario with both literals written out verbatim (deliberately duplicated, not imported).
-- [ ] **Step 4: Run it.** `npx vitest run core/events.test.ts core/acp/client.test.ts test/fixtures/fake-acp-agent.test.ts` — PASS. `npx tsc -b`.
-- [ ] **Step 5: Commit.** `git commit -m "feat(core): turn pi-acp's compaction prose into an event"`
+- [x] **Step 1: Write the failing tests.** `core/events.test.ts`: `it('turns a compaction sentinel into a compaction event, not text')` for both literals, and `it('leaves a sentence that mentions compaction alone')` (the end sentence plus `' ok'` stays a `chunk`). `core/acp/client.test.ts`: `it('emits a compaction event and no sentinel prose')` — joined chunk text is `'before after'`, phases `['start', 'end']`.
+- [x] **Step 2: Run them.** `npx vitest run core/events.test.ts -t 'compaction'` — FAIL.
+- [x] **Step 3: Implement** the constants, `compactionPhase`, and the branch in `agent_message_chunk` that returns the event instead of the chunk. Add the fixture scenario with both literals written out verbatim (deliberately duplicated, not imported).
+- [x] **Step 4: Run it.** `npx vitest run core/events.test.ts core/acp/client.test.ts test/fixtures/fake-acp-agent.test.ts` — PASS. `npx tsc -b`.
+- [x] **Step 5: Commit.** `git commit -m "feat(core): turn pi-acp's compaction prose into an event"`
 
 ### Task 6: The divider on the timeline
 
@@ -152,11 +152,11 @@ Failure modes no happy-path test covers; each gets a test in an owning task.
 - Produces: `TimelineItem` kind `'divider'`; one divider per compaction; `agentTurn: undefined` so chunk coalescing breaks across it.
 - Consumes: the `compaction` event (Task 5).
 
-- [ ] **Step 1: Write the failing tests.** `src/ui/state/transcript.test.ts`: `it('inserts a divider between the prose around a compaction')` — `turn.started`, `chunk 'before'`, `compaction start`, `chunk 'after'` ⇒ kinds `['agent', 'divider', 'agent']` and the divider is `pending: true`; `it('closes the pending divider on the end sentinel')`; `it('inserts a closed divider for an end with no matching start')`. `src/ui/host/transcript.test.ts`: `it('renders a divider item')` — `[data-item="divider"]` exists and its text is `context compacted`.
-- [ ] **Step 2: Run them.** `npx vitest run src/ui/state/transcript.test.ts src/ui/host/transcript.test.ts -t divider` — FAIL.
-- [ ] **Step 3: Implement** the union member, the reducer case (with the `agentTurn` reset and its comment), and the render branch: two hairline rules with the host-owned label between them, `var(--sbh-color-text-muted)`, no `innerHTML`, no `renderMarkdown`. `'compacting context'` while pending, `'context compacted'` after.
-- [ ] **Step 4: Run it.** PASS. `npx tsc -b` — the `// tool` fallthrough must still type-check as `'tool'` after the new branch.
-- [ ] **Step 5: Commit.** `git commit -m "feat(ui): a divider where the agent compacted its context"`
+- [x] **Step 1: Write the failing tests.** `src/ui/state/transcript.test.ts`: `it('inserts a divider between the prose around a compaction')` — `turn.started`, `chunk 'before'`, `compaction start`, `chunk 'after'` ⇒ kinds `['agent', 'divider', 'agent']` and the divider is `pending: true`; `it('closes the pending divider on the end sentinel')`; `it('inserts a closed divider for an end with no matching start')`. `src/ui/host/transcript.test.ts`: `it('renders a divider item')` — `[data-item="divider"]` exists and its text is `context compacted`.
+- [x] **Step 2: Run them.** `npx vitest run src/ui/state/transcript.test.ts src/ui/host/transcript.test.ts -t divider` — FAIL.
+- [x] **Step 3: Implement** the union member, the reducer case (with the `agentTurn` reset and its comment), and the render branch: two hairline rules with the host-owned label between them, `var(--sbh-color-text-muted)`, no `innerHTML`, no `renderMarkdown`. `'compacting context'` while pending, `'context compacted'` after.
+- [x] **Step 4: Run it.** PASS. `npx tsc -b` — the `// tool` fallthrough must still type-check as `'tool'` after the new branch.
+- [x] **Step 5: Commit.** `git commit -m "feat(ui): a divider where the agent compacted its context"`
 
 ### Task 7: The composer's deliberate choice
 
@@ -169,11 +169,11 @@ Failure modes no happy-path test covers; each gets a test in an owning task.
 - Consumes: `host.queued` (Task 4), `steer` on the wire (Task 3).
 - Produces: `Enter` ⇒ `prompt.send` with no payload; `Shift+Enter` ⇒ `prompt.send { steer: true }`; `button[data-queue]` ⇒ plain `prompt.send`, visible only while streaming.
 
-- [ ] **Step 1: Write the failing tests.** `src/ui/host/transcript.test.ts`: extend the `withStatus` helper's dispatch spy to record `(action, payload)` in a separate array while keeping `actions: string[]` so existing assertions are untouched; add `it('queues on Enter while streaming and steers on Shift+Enter')` dispatching real `KeyboardEvent`s on `input[data-atom="input"]`, and `it('shows a Queue button only while streaming')`. `src/App.test.tsx`: `it('puts steer on the wire')` — `turn.started`, type a draft, `Shift+Enter`, then assert `socket.sent` contains `{ type: 'prompt', text: 'hi', steer: true }`.
-- [ ] **Step 2: Run them.** `npx vitest run src/ui/host/transcript.test.ts src/App.test.tsx` — FAIL.
-- [ ] **Step 3: Implement** the key handler, the Queue button, the `steer` prop plumbing in `prompt.send`, and the button's `title` naming both bindings. Leave the `Send`/`Stop` toggle (`L788`) and the Escape handler (`L732`) exactly as they are.
-- [ ] **Step 4: Run it.** `npx vitest run src/ui/host/transcript.test.ts src/App.test.tsx` — PASS, including the two pre-existing composer button tests. `npx tsc -b`.
-- [ ] **Step 5: Commit.** `git commit -m "feat(ui): Enter queues a follow-up, Shift+Enter steers"`
+- [x] **Step 1: Write the failing tests.** `src/ui/host/transcript.test.ts`: extend the `withStatus` helper's dispatch spy to record `(action, payload)` in a separate array while keeping `actions: string[]` so existing assertions are untouched; add `it('queues on Enter while streaming and steers on Shift+Enter')` dispatching real `KeyboardEvent`s on `input[data-atom="input"]`, and `it('shows a Queue button only while streaming')`. `src/App.test.tsx`: `it('puts steer on the wire')` — `turn.started`, type a draft, `Shift+Enter`, then assert `socket.sent` contains `{ type: 'prompt', text: 'hi', steer: true }`.
+- [x] **Step 2: Run them.** `npx vitest run src/ui/host/transcript.test.ts src/App.test.tsx` — FAIL.
+- [x] **Step 3: Implement** the key handler, the Queue button, the `steer` prop plumbing in `prompt.send`, and the button's `title` naming both bindings. Leave the `Send`/`Stop` toggle (`L788`) and the Escape handler (`L732`) exactly as they are.
+- [x] **Step 4: Run it.** `npx vitest run src/ui/host/transcript.test.ts src/App.test.tsx` — PASS, including the two pre-existing composer button tests. `npx tsc -b`.
+- [x] **Step 5: Commit.** `git commit -m "feat(ui): Enter queues a follow-up, Shift+Enter steers"`
 
 ### Task 8: Full suite, manual smoke, docs
 
