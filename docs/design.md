@@ -214,6 +214,16 @@ lights up for a backend that offers one. Attachments are shipped as bytes, persi
 by the core, and mapped to an ACP image block, embedded text, or a file link; a PDF
 is handed to the harness, because ACP cannot inline it and SBH does not parse it.
 
+## Project files, read-only
+
+The core reads project files only under working directories it already knows (the
+session cwds it has been given), never under an arbitrary path a client names. Each
+request's `root` must match a known root, and `path` is resolved with `realpath`
+before the prefix check, so a symlink that escapes the root is refused rather than
+followed. The read path is read-only: it never writes, renames or deletes, and it
+never spawns an agent. It sits behind the same origin guard as every other route,
+so a foreign page cannot list the user's project.
+
 ## Not in scope (decided, not forgotten)
 
 - **Mobile** — the next piece, and the reason the core is loopback-first. It is a

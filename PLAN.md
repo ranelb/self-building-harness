@@ -145,3 +145,19 @@ no fork point and pi does not implement `session/fork`, so on pi an edit prefill
 composer and dims the superseded turn; the fork path exists for a backend that offers
 one. Attachments travel as bytes and are persisted by the core, which maps them to an
 image block, embedded text, or a file link — the frontend names no transport.
+
+## Project file panel (core read path)
+
+Decisions recorded for the project file panel (see
+`docs/superpowers/specs/2026-10-17-project-file-panel-design.md`):
+
+- **Git status rides on `/files/tree`.** The tree response carries per-entry git
+  state, so the panel needs one request per directory, not a second status call.
+- **Absolute paths are refused (400).** `path` is always relative to a known root;
+  an absolute path is a malformed request, not a lookup to resolve.
+- **Escaping symlinks are listed as `outside: true` but refused.** The entry is
+  visible so the user sees it exists, but reading through it returns 403 because
+  the realpath leaves the root.
+- **Roots only grow, and a GET never spawns an agent.** A root enters the known set
+  when a session's cwd is established; file reads never create a session or start a
+  backend process. Verified by a smoke run: 15 reads left the core with no child.
