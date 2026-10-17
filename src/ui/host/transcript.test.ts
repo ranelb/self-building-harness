@@ -67,6 +67,20 @@ describe('transcript windowing', () => {  it('renders only a page of a 10k trans
   })
 })
 
+describe('compaction divider', () => {
+  it('renders a divider item', () => {
+    const items: TimelineItem[] = [
+      { id: 'd1', kind: 'divider', pending: false },
+    ]
+    const ctx = withMessages(0)
+    ctx.host.items = items
+    const root = renderTree({ type: 'transcript' }, ctx) as HTMLElement
+    const divider = root.querySelector('[data-item="divider"]')
+    expect(divider).not.toBeNull()
+    expect(divider?.textContent).toBe('context compacted')
+  })
+})
+
 describe('permission card', () => {
   it('shows the tool kind and the raw input, not just a title', () => {
     const base = withMessages(0)

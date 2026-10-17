@@ -12,6 +12,41 @@ const tool = (over: Partial<Extract<UiEvent, { type: 'tool' }>> = {}): UiEvent =
 })
 
 describe('timeline', () => {
+  describe('compaction divider', () => {
+    it('inserts a divider between the prose around a compaction', () => {
+      const state = apply([
+        { type: 'turn.started', turnId: 1 },
+        { type: 'chunk', text: 'before' },
+        { type: 'compaction', phase: 'start' },
+        { type: 'chunk', text: 'after' },
+      ])
+      expect(state.items.map((item) => item.kind)).toEqual(['agent', 'divider', 'agent'])
+      expect(state.items[1]).toMatchObject({ kind: 'divider', pending: true })
+    })
+
+    it('closes the pending divider on the end sentinel', () => {
+      const state = apply([
+        { type: 'turn.started', turnId: 1 },
+        { type: 'chunk', text: 'before' },
+        { type: 'compaction', phase: 'start' },
+        { type: 'compaction', phase: 'end' },
+        { type: 'chunk', text: 'after' },
+      ])
+      expect(state.items.map((item) => item.kind)).toEqual(['agent', 'divider', 'agent'])
+      expect(state.items[1]).toMatchObject({ kind: 'divider', pending: false })
+    })
+
+    it('inserts a closed divider for an end with no matching start', () => {
+      const state = apply([
+        { type: 'turn.started', turnId: 1 },
+        { type: 'chunk', text: 'before' },
+        { type: 'compaction', phase: 'end' },
+      ])
+      expect(state.items.map((item) => item.kind)).toEqual(['agent', 'divider'])
+      expect(state.items[1]).toMatchObject({ kind: 'divider', pending: false })
+    })
+  })
+
   it('coalesces consecutive agent chunks into one item', () => {
     const state = apply([
       { type: 'turn.started', turnId: 1 },

@@ -51,6 +51,8 @@ export type TimelineItem =
   | { id: string; kind: 'user'; text: string; attachments: Attachment[]; superseded?: boolean }
   | { id: string; kind: 'agent'; text: string }
   | { id: string; kind: 'thought'; text: string }
+  /** A compaction marker. `pending` while the agent is still compacting. */
+  | { id: string; kind: 'divider'; pending?: boolean }
   | {
       id: string
       kind: 'tool'

@@ -252,6 +252,30 @@ export function applyEvent(state: Transcript, event: UiEvent): Transcript {
     case 'session.reset':
       return reset(state)
 
+    case 'compaction': {
+      // Clearing agentTurn is what makes the divider land between the prose: the next
+      // chunk must open a new agent item rather than extend the one before the marker.
+      const last = state.items[state.items.length - 1]
+      if (event.phase === 'start') {
+        return {
+          ...state,
+          agentTurn: undefined,
+          items: [...state.items, { id: nextId(), kind: 'divider', pending: true }],
+        }
+      }
+      if (last && last.kind === 'divider' && last.pending) {
+        const items = state.items.slice()
+        items[items.length - 1] = { ...last, pending: false }
+        return { ...state, agentTurn: undefined, items }
+      }
+      // An end with no start (or after a closed divider): still show the marker.
+      return {
+        ...state,
+        agentTurn: undefined,
+        items: [...state.items, { id: nextId(), kind: 'divider', pending: false }],
+      }
+    }
+
     default:
       return state
   }

@@ -186,6 +186,22 @@ const renderItem = (item: TimelineItem): HTMLElement => {
     return wrap
   }
 
+  if (item.kind === 'divider') {
+    // Two hairlines with a host-owned label: the label is ours, never model text.
+    wrap.style.cssText =
+      'display:flex;align-items:center;gap:var(--sbh-space-sm);margin:var(--sbh-space-xs) 0;' +
+      'color:var(--sbh-color-text-muted);font-size:var(--sbh-font-size-sm)'
+    const rule = (): HTMLElement => {
+      const line = document.createElement('div')
+      line.style.cssText = 'flex:1;height:1px;background:var(--sbh-color-border)'
+      return line
+    }
+    const label = document.createElement('span')
+    label.textContent = item.pending ? 'compacting context' : 'context compacted'
+    wrap.append(rule(), label, rule())
+    return wrap
+  }
+
   // tool
   wrap.style.cssText =
     'border:1px solid var(--sbh-color-border);border-radius:var(--sbh-radius-md);' +
