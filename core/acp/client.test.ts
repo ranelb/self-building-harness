@@ -179,6 +179,16 @@ describe('connectAcp', () => {
     expect(await conn.fork()).toBe('forked-session')
     conn.close()
   })
+  it('emits a compaction event and no sentinel prose', async () => {
+    const conn = connectAcp(fake('compaction'))
+    const events = collect(conn)
+    await conn.prompt('go', [])
+    const chunks = events.filter((e) => e.type === 'chunk').map((e) => (e as { text: string }).text)
+    const phases = events.filter((e) => e.type === 'compaction').map((e) => (e as { phase: string }).phase)
+    expect(chunks.join('')).toBe('before after')
+    expect(phases).toEqual(['start', 'end'])
+  })
+
 })
 
 describe('turn control', () => {

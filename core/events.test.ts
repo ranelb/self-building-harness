@@ -8,6 +8,44 @@ describe('normalizeUpdate', () => {
     ).toEqual([{ type: 'chunk', text: 'hi' }])
   })
 
+  it('turns a compaction start sentinel into a compaction event, not text', () => {
+    expect(
+      normalizeUpdate({
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'Context nearing limit, running automatic compaction...' },
+      })
+    ).toEqual([{ type: 'compaction', phase: 'start' }])
+  })
+
+  it('turns a compaction end sentinel into a compaction event, not text', () => {
+    expect(
+      normalizeUpdate({
+        sessionUpdate: 'agent_message_chunk',
+        content: {
+          type: 'text',
+          text: 'Automatic compaction finished; context was summarized to continue the session.',
+        },
+      })
+    ).toEqual([{ type: 'compaction', phase: 'end' }])
+  })
+
+  it('leaves a sentence that mentions compaction alone', () => {
+    expect(
+      normalizeUpdate({
+        sessionUpdate: 'agent_message_chunk',
+        content: {
+          type: 'text',
+          text: 'Automatic compaction finished; context was summarized to continue the session. ok',
+        },
+      })
+    ).toEqual([
+      {
+        type: 'chunk',
+        text: 'Automatic compaction finished; context was summarized to continue the session. ok',
+      },
+    ])
+  })
+
   it('maps an agent thought chunk to a thought event', () => {
     expect(
       normalizeUpdate({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'why' } })

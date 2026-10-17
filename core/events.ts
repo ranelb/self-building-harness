@@ -17,6 +17,22 @@ const textOf = (content: unknown): string | null => {
   return content.type === 'text' && typeof content.text === 'string' ? content.text : null
 }
 
+/**
+ * pi-acp reports compaction as ordinary agent prose, so these are string matches on
+ * an unstable upstream detail. If pi-acp rewords them the divider silently stops
+ * appearing; nothing else breaks, and no text is lost.
+ */
+const COMPACTION_START = 'Context nearing limit, running automatic compaction...'
+const COMPACTION_END = 'Automatic compaction finished; context was summarized to continue the session.'
+
+/** Exact match on the trimmed chunk: a sentence that mentions compaction is prose. */
+const compactionPhase = (text: string): 'start' | 'end' | null => {
+  const trimmed = text.trim()
+  if (trimmed === COMPACTION_START) return 'start'
+  if (trimmed === COMPACTION_END) return 'end'
+  return null
+}
+
 /** Read ACP `ToolCallLocation[]`, dropping anything malformed. */
 const readLocations = (raw: unknown): { path: string; line?: number }[] => {
   if (!Array.isArray(raw)) return []
@@ -60,7 +76,9 @@ export function normalizeUpdate(update: unknown): UiEvent[] {
   switch (update.sessionUpdate) {
     case 'agent_message_chunk': {
       const text = textOf(update.content)
-      return text === null ? [] : [{ type: 'chunk', text }]
+      if (text === null) return []
+      const phase = compactionPhase(text)
+      return phase ? [{ type: 'compaction', phase }] : [{ type: 'chunk', text }]
     }
 
     case 'user_message_chunk': {

@@ -22,6 +22,7 @@ export const SCENARIOS = [
   'cancel',
   'queue-turn',
   'steer',
+  'compaction',
 ] as const
 
 export type Scenario = (typeof SCENARIOS)[number]
@@ -121,6 +122,15 @@ async function runScenario(
       // The context meter's data source, so it is testable without a model.
       notify({ sessionUpdate: 'usage_update', used: 12_345, size: 100_000, cost: { amount: 0.02, currency: 'USD' } })
       chunk('counted')
+      return
+
+    case 'compaction':
+      // The sentinels are written out here, not imported from core/events.ts: a fake
+      // that imports the constant it is meant to validate proves nothing.
+      chunk('before ')
+      chunk('Context nearing limit, running automatic compaction...')
+      chunk('Automatic compaction finished; context was summarized to continue the session.')
+      chunk('after')
       return
 
     case 'unknown-update':

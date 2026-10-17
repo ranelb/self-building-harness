@@ -67,6 +67,8 @@ export type UiEvent =
       rawInput?: unknown
     }
   | { type: 'usage'; used: number; size: number; cost?: unknown }
+  /** pi-acp's compaction prose, recognised by the core and never shown as text. */
+  | { type: 'compaction'; phase: 'start' | 'end' }
   | { type: 'config'; options: SessionConfigOption[] }
   /** The core decided (manifest on), for display and the audit log. */
   | {
